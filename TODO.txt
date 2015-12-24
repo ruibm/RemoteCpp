@@ -4,5 +4,16 @@ X Pull the output of the remote 'ls' and print it onto a newly opened readonly v
 X Wire the new readonly-view to click open the file under the cursor.
 X ssh commands need to run in the background ThreadPool.
 X Write a progress bar for background tasks.
+X Catch the event to select a line in the ListFiles file.
+X scp the remote file into the local system.
+X Open the remote/local file in a new view.
+X Wire up mouse cmd click to open the files.
+X Event listener for saving files.
+X Implement refreshing the cache.
+X scp copy the local file up to the server again.
 
+- Persist the internal state of the plugin and reload it at start time.
+- Command to refresh all open local files.
+- Command to refresh current open file.
+- Adding setting for base path.
 
