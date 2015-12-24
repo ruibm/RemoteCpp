@@ -1,0 +1,8 @@
+== TODO
+X Run a remote 'ssh ls' command.
+X Pull the output of the remote 'ls' and print it onto a newly opened readonly view.
+X Wire the new readonly-view to click open the file under the cursor.
+X ssh commands need to run in the background ThreadPool.
+X Write a progress bar for background tasks.
+
+

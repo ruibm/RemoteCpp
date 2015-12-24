@@ -1,0 +1,5 @@
+[
+    {
+        "keys": ["ctrl+alt+super+r"], "command": "remote_cpp_list_files"
+    }
+]
