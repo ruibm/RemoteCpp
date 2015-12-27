@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import os.path
+import re
 import shutil
 import subprocess
 import sys
@@ -15,6 +16,34 @@ import threading
 import traceback
 
 from subprocess import PIPE
+
+
+##############################################################
+# RemoteCpp Settings
+##############################################################
+
+# TODO(ruibm): Maybe I should pass in a window/view argument here. This is a
+# bit dangerous.
+def _get_or_default(setting, default, view=None):
+  if not view:
+    view = sublime.active_window().active_view()
+  return view.settings().get(setting, default)
+
+def s_ssh():
+  return _get_or_default('remote_cpp_ssh', 'ssh')
+
+def s_ssh_port():
+  return int(_get_or_default('remote_cpp_ssh_port', 8888))
+
+def s_cwd():
+  return _get_or_default('remote_cpp_cwd', 'cwd')
+
+def s_scp():
+  return _get_or_default('remote_cpp_scp', 'scp')
+
+def s_build_cmd():
+  return _get_or_default('build_cmd', 'buck build')
+
 
 ##############################################################
 # Constants
@@ -56,7 +85,92 @@ def plugin_unloaded():
   try:
     PluginState.save()
   except:
-    log_exception("Critical failure unloading RemoteCpp plugin.")
+    log_exception("Critical failure saving RemoteCpp plugin state.")
+
+
+class LineSelectorEventListener(sublime_plugin.EventListener):
+  # Whether this EventListener is enabled for the current View.
+  def is_enabled(self, view):
+    return False
+
+  # Whether the current select line is valid.
+  def is_valid(self, line):
+    raise NotImplementedError()
+
+  # Returns a tuple (cmd, args).
+  def create_cmd(self, view, line):
+    raise NotImplementedError()
+
+  def on_text_command(self, view, command_name, args):
+    if not self.is_enabled(view):
+      return None
+    if command_name == 'insert' and args['characters'] == '\n':
+      for reg in view.sel():
+        if reg.empty():
+          line = view.line(reg)
+          path = view.substr(line).strip()
+          if not self.is_valid(path):
+            continue
+          return self.create_cmd(view, path)
+    if command_name == 'drag_select' and 'additive' in args:
+      self._sel = self._get_sel(view)
+    log('pre: cmd=[{cmd}] args=[{args}]'.format(
+        cmd=command_name, args=str(args)), type='on_text_command')
+    return None
+
+  def on_post_text_command(self, view, command_name, args):
+    if not self.is_enabled(view):
+      return
+    if command_name == 'drag_select' and 'additive' in args:
+      sel = self._get_sel(view)
+      diff = sel.difference(self._sel)
+      for point in diff:
+        path = view.substr(view.line(point))
+        if self.is_valid(path):
+          cmd, args = self.create_cmd(view, path)
+          view.run_command(cmd, args)
+          return
+    log('post: cmd=[{cmd}] args=[{args}]'.format(
+        cmd=command_name, args=str(args)), type='on_text_command')
+    return
+
+  def _is_valid(self, line):
+    return len(line.strip()) > 0 and not line.strip().startswith('#')
+
+  def _cwd(self, view):
+    line = view.substr(view.line(0))
+    cwd = line[len(CWD_PREFIX):]
+    return cwd
+
+  def _file(self, view, path):
+    cwd = self._cwd(view)
+    file = File(cwd=cwd, path=path)
+    return file
+
+  def _get_sel(self, view):
+    sel = set()
+    for reg in view.sel():
+      if reg.empty():
+        sel.add(reg.a)
+    return sel
+
+
+class FollowIncludeEventListener(LineSelectorEventListener):
+  REGEX = re.compile('^.+["<](.+)[">].+$')
+
+  def is_enabled(self, view):
+    return view.id() in remote_files
+
+  def is_valid(self, line):
+    match = self.REGEX.match(line)
+    return match != None
+
+  def create_cmd(self, view, line):
+    match = self.REGEX.match(line)
+    path = match.group(1)
+    args = File(cwd=s.cwd(), path=path).to_args()
+    log("Sending this: {0}".format(str((RemoteCppOpenFileCommand.NAME, args))))
+    return (RemoteCppOpenFileCommand.NAME, args)
 
 
 class SaveFileEventListener(sublime_plugin.EventListener):
@@ -71,7 +185,7 @@ class SaveFileEventListener(sublime_plugin.EventListener):
     log('Saving file [{0}]...'.format(file.remote_path()))
     run_cmd((
         s_scp(),
-        '-P', s_ssh_port(),
+        '-P', str(s_ssh_port()),
         '{path}'.format(path=file.local_path()),
         'localhost:{path}'.format(path=file.remote_path()),
     ))
@@ -162,9 +276,11 @@ class RemoteCppRefreshCache(sublime_plugin.TextCommand):
       if view.id() in remote_files:
         file = remote_files[view.id()]
         files.append(file)
-        root = file.local_root()
+        roots.add(file.local_root())
+    for root in roots:
         log('Deleting local cache directory [{0}]...'.format(root))
-        shutil.rmtree(root)
+        if os.path.exists(root):
+          shutil.rmtree(root)
     for file in files:
       log("Refreshing open file [{0}]...".format(file.remote_path()))
       download_file(file)
@@ -243,28 +359,6 @@ class RemoteCppAppendTextCommand(sublime_plugin.TextCommand):
     view.insert(edit, 0, text)
     view.set_read_only(True)
 
-
-##############################################################
-# RemoteCpp Settings
-##############################################################
-
-def _get_or_default(setting, default):
-  return sublime.active_window().active_view().settings().get(setting, default)
-
-def s_ssh():
-  return _get_or_default('remote_cpp_ssh', 'ssh')
-
-def s_cwd():
-  return _get_or_default('remote_cpp_cwd', 'cwd')
-
-def s_scp():
-  return _get_or_default('remote_cpp_scp', 'scp')
-
-def s_ssh_port():
-  return int(_get_or_default('remote_cpp_ssh_port', 8888))
-
-def s_build_cmd():
-  return _get_or_default('build_cmd', 'buck build')
 
 ##############################################################
 # Static Methods
@@ -419,7 +513,7 @@ class ProgressAnimation(object):
 
 
 class PluginState(object):
-  STATE_FILE = 'RemoteCapp.state.json'
+  STATE_FILE = 'RemoteCpp.state.json'
   FILES = "remote_files"
 
   @staticmethod

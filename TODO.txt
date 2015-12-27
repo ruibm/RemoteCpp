@@ -12,12 +12,14 @@ X Event listener for saving files.
 X Implement refreshing the cache.
 X scp copy the local file up to the server again.
 X Add settings to configure cwd, ssh, scp, ...
+X Persist the internal state of the plugin and reload it at start time.
+- Follow includes in cpp files.
 
 - Jump between header and cpp.
-- Follow includes in cpp files.
 - Allow remote building.
 
-- Persist the internal state of the plugin and reload it at start time.
 - Command to refresh all open local files.
 - Command to refresh current open file.
 - Adding setting for base path.
+
+- Add is_enabled methods to the TextCommands.
