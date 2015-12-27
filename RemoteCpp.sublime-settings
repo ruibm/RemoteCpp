@@ -1,3 +1,7 @@
 {
-
+  "remote_cpp_cwd": "~",
+  "remote_cpp_ssh": "ssh",
+  "remote_cpp_ssh_port": "8888",
+  "remote_cpp_scp": "scp",
+  "remote_cpp_build_cmd": "buck build",
 }

@@ -4,6 +4,7 @@ import sublime
 import sublime_plugin
 
 import datetime
+import hashlib
 import os
 import os.path
 import shutil
@@ -19,6 +20,7 @@ from subprocess import PIPE
 
 LS_VIEW_TITLE_PREFIX = 'ListView'
 LOG_TYPES = set(('',))
+CWD_PREFIX = '# CWD='
 
 
 ##############################################################
@@ -29,7 +31,7 @@ LOG_TYPES = set(('',))
 thread_pool = None
 
 # key corresponds to View.id().
-# value is a dictionary of properties.
+# value is an instance of 'class File' defined in this file.
 file_state = {}
 
 
@@ -46,20 +48,20 @@ def plugin_loaded():
 class SaveFileEventListener(sublime_plugin.EventListener):
   def on_post_save(self, view):
     if view.id() in file_state:
-      state = file_state[view.id()]
+      file = file_state[view.id()]
       log('Saving file: ' + str())
-      runnable = lambda : self._run_in_the_background(**state)
+      runnable = lambda : self._run_in_the_background(file)
       thread_pool.run(runnable)
 
-  def _run_in_the_background(self, remote_path, local_path):
-    log('Saving file [{0}]...'.format(local_path))
+  def _run_in_the_background(self, file):
+    log('Saving file [{0}]...'.format(file.remote_path()))
     run_cmd((
-        'scp',
-        '-P', '8888',
-        '{path}'.format(path=local_path),
-        'localhost:{path}'.format(path=remote_path),
+        s_scp(),
+        '-P', s_ssh_port(),
+        '{path}'.format(path=file.local_path()),
+        'localhost:{path}'.format(path=file.remote_path()),
     ))
-    log('Successsfully saved file [{0}].'.format(remote_path))
+    log('Successsfully saved file [{0}].'.format(file.local_path()))
 
 
 class ListFilesEventListener(sublime_plugin.EventListener):
@@ -67,7 +69,13 @@ class ListFilesEventListener(sublime_plugin.EventListener):
     if not RemoteCppListFilesCommand.owns_view(view):
       return None
     if command_name == 'insert' and args['characters'] == '\n':
-      return self._create_cmd(view)
+      for reg in view.sel():
+        if reg.empty():
+          line = view.line(reg)
+          path = view.substr(line).strip()
+          print('ola ' + str(self._file(view, path)))
+          args = self._file(view, path).to_args()
+          return (RemoteCppOpenFileCommand.NAME, args)
     if command_name == 'drag_select' and 'additive' in args:
       self._sel = self._get_sel(view)
     log('pre: cmd=[{cmd}] args=[{args}]'.format(
@@ -82,13 +90,23 @@ class ListFilesEventListener(sublime_plugin.EventListener):
       diff = sel.difference(self._sel)
       for point in diff:
         path = view.substr(view.line(point))
-        cmd, args = self._create_cmd(view)
-        view.run_command(RemoteCppOpenFileCommand.NAME, {'path': path})
+        args = self._file(view, path).to_args()
+        view.run_command(RemoteCppOpenFileCommand.NAME, args)
         return
       log('Would open file: ' + str(args))
     log('post: cmd=[{cmd}] args=[{args}]'.format(
         cmd=command_name, args=str(args)), type='on_text_command')
     return
+
+  def _cwd(self, view):
+    line = view.substr(view.line(0))
+    cwd = line[len(CWD_PREFIX):]
+    return cwd
+
+  def _file(self, view, path):
+    cwd = self._cwd(view)
+    file = File(cwd=cwd, path=path)
+    return file
 
   def _get_sel(self, view):
     sel = set()
@@ -97,13 +115,6 @@ class ListFilesEventListener(sublime_plugin.EventListener):
         sel.add(reg.a)
     return sel
 
-  def _create_cmd(self, view):
-    for reg in view.sel():
-      if reg.empty():
-        line = view.line(reg)
-        path = view.substr(line).strip()
-        return (RemoteCppOpenFileCommand.NAME, {'path': path})
-    return None
 
 
 ##############################################################
@@ -127,50 +138,46 @@ class RemoteCppRefreshCache(sublime_plugin.TextCommand):
     thread_pool.run(runnable)
 
   def _run_in_the_background(self, window):
-    directory = get_local_path()
-    log('Deleting local cache directory [{0}]...'.format(directory))
-    shutil.rmtree(directory)
-    os.makedirs(directory)
+    files = []
+    roots = set()
     for view in window.views():
       if view.id() in file_state:
-        state = file_state[view.id()]
-        log("Refreshing open file [{0}]...".format(state['local_path']))
-        os.makedirs(os.path.dirname(state['local_path']))
-        download_file(
-          remote_path=state['remote_path'],
-          local_path=state['local_path'])
+        file = file_state[view.id()]
+        files.append(file)
+        log('Deleting local cache directory [{0}]...'.format(root))
+        shutil.rmtree(root)
+    for file in files:
+      log("Refreshing open file [{0}]...".format(file.remote_path()))
+      download_file(file)
     log('Finished deleting the cache successfully.')
 
 
 class RemoteCppOpenFileCommand(sublime_plugin.TextCommand):
     NAME = 'remote_cpp_open_file'
 
-    def run(self, edit, path):
-      log("Opening => " + path)
-      remote_path = path
-      local_path = get_local_path(remote_path)
+    def run(self, edit, **args):
+      file = File(**args)
+      log("Opening => " + file.remote_path())
+      remote_path = file.remote_path()
+      local_path = file.local_path()
       window = sublime.active_window()
       # Shortcut if the file already exists.
       if os.path.isfile(local_path):
-        self._open_file(window, remote_path, local_path)
+        self._open_file(window, file)
         return
       # Otherwise let's copy the file locally.
       runnable = lambda : self._run_in_the_background(
           window,
-          remote_path,
-          local_path)
+          file)
       thread_pool.run(runnable)
 
-    def _run_in_the_background(self, window, remote_path, local_path):
-      download_file(remote_path=remote_path, local_path=local_path)
-      self._open_file(window, remote_path, local_path)
+    def _run_in_the_background(self, window, file):
+      download_file(file)
+      self._open_file(window, file)
 
-    def _open_file(self, window, remote_path, local_path):
-      view = window.open_file(local_path)
-      file_state[view.id()] = {
-          'remote_path': remote_path,
-          'local_path': local_path
-      }
+    def _open_file(self, window, file):
+      view = window.open_file(file.local_path())
+      file_state[view.id()] = file
 
 
 class RemoteCppListFilesCommand(sublime_plugin.TextCommand):
@@ -188,10 +195,15 @@ class RemoteCppListFilesCommand(sublime_plugin.TextCommand):
       log("Running in the background!!!")
       try:
         files = run_cmd((
-            'ssh', '-p', '8888', 'localhost',
-            'find . -maxdepth 5 -not -path \'*/\\.*\' -type f -printf "%P\n"'))
+            s_ssh(), '-p {0}'.format(s_ssh_port()), 'localhost',
+            'cd {0}; '.format(s_cwd()) +
+            'find . -maxdepth 5 -not -path \'*/\\.*\' -type f -printf "%P\\n"'))
         files = '\n'.join(sorted(files.split('\n'), key=lambda s: s.lower()))
-        Commands.append_text(view, files.lstrip())
+        files = '{cwd_prefix}{cwd}\n\n{files}'.format(
+            cwd_prefix=CWD_PREFIX,
+            cwd=s_cwd(),
+            files=files.lstrip())
+        Commands.append_text(view, files)
       except Exception as e:
         Commands.append_text(view, 'Error listing files: [{exception}].'.format(
           exception=e))
@@ -214,26 +226,40 @@ class RemoteCppAppendTextCommand(sublime_plugin.TextCommand):
 
 
 ##############################################################
+# RemoteCpp Settings
+##############################################################
+
+def _get_or_default(setting, default):
+  return sublime.active_window().active_view().settings().get(setting, default)
+
+def s_ssh():
+  return _get_or_default('remote_cpp_ssh', 'ssh')
+
+def s_cwd():
+  return _get_or_default('remote_cpp_cwd', 'cwd')
+
+def s_scp():
+  return _get_or_default('remote_cpp_scp', 'scp')
+
+def s_ssh_port():
+  return int(_get_or_default('remote_cpp_ssh_port', 8888))
+
+def s_build_cmd():
+  return _get_or_default('build_cmd', 'buck build')
+
+##############################################################
 # Static Methods
 ##############################################################
 
-def download_file(remote_path, local_path):
-  log('Downloading the file [{file}]...'.format(file=remote_path))
+def download_file(file):
+  log('Downloading the file [{file}]...'.format(file=file.remote_path()))
   run_cmd((
       'scp',
       '-P', '8888',
-      'localhost:{path}'.format(path=remote_path),
-      '{path}'.format(path=local_path)
+      'localhost:{path}'.format(path=file.remote_path()),
+      '{path}'.format(path=file.local_path())
   ))
-  log('Done downloading the file into [{file}].'.format(file=local_path))
-
-def get_local_path(remote_path=''):
-  local_path = os.path.join(sublime.cache_path(), 'RemoteCpp', remote_path)
-  directory = os.path.dirname(local_path)
-  if not os.path.isdir(directory):
-    log('Creating directory [{0}]...'.format(directory))
-    os.makedirs(directory)
-  return local_path
+  log('Done downloading the file into [{file}].'.format(file=file.local_path()))
 
 def run_cmd(cmd_list):
   proc = subprocess.Popen(cmd_list,
@@ -257,10 +283,51 @@ def log(msg, type=''):
   if type in LOG_TYPES:
     print(msg)
 
+def md5(msg):
+  m = hashlib.md5()
+  m.update(msg.encode())
+  return m.hexdigest()
+
 
 ##############################################################
 # Classes
 ##############################################################
+
+class File(object):
+  PLUGIN_DIR = 'RemoteCpp'
+
+  def __init__(self, cwd, path):
+    self.cwd = cwd
+    self.path = path
+
+  def remote_path(self):
+    return os.path.join(self.cwd, self.path)
+
+  def local_path(self, call_makedirs=True):
+    local_path = os.path.join(
+        sublime.cache_path(),
+        self.PLUGIN_DIR,
+        md5(self.cwd),
+        self.path)
+    directory = os.path.dirname(local_path)
+    if call_makedirs and not os.path.isdir(directory):
+      log('Creating directory [{0}]...'.format(directory))
+      os.makedirs(directory)
+    return local_path
+
+  def local_root(self):
+    local_root = os.path.join(
+        sublime.cache_path(),
+        self.PLUGIN_DIR,
+        md5(self.cwd))
+    return local_root
+
+  def to_args(self):
+    return {
+      'cwd': self.cwd,
+      'path': self.path,
+    }
+
 
 class ThreadPool(object):
   def __init__(self, number_threads):
@@ -286,6 +353,7 @@ class ThreadPool(object):
   def tasks_running(self):
     with self._lock:
       return self._tasks_running
+
 
 class ProgressAnimation(object):
   def __init__(self, tasks_running):
