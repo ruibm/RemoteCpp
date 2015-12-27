@@ -5,6 +5,7 @@ import sublime_plugin
 
 import datetime
 import hashlib
+import json
 import os
 import os.path
 import shutil
@@ -43,7 +44,19 @@ remote_files = {}
 def plugin_loaded():
   global thread_pool
   thread_pool = ThreadPool(1)
+  try:
+    PluginState.load()
+  except:
+    log_exception('Critical problem loading the plugin state file.')
+    # TODO(ruibm): Potentially mv the file to $NAME.old
   log('RemoteCpp has loaded successfully! :)')
+
+
+def plugin_unloaded():
+  try:
+    PluginState.save()
+  except:
+    log_exception("Critical failure unloading RemoteCpp plugin.")
 
 
 class SaveFileEventListener(sublime_plugin.EventListener):
@@ -76,7 +89,6 @@ class ListFilesEventListener(sublime_plugin.EventListener):
           path = view.substr(line).strip()
           if not self._is_valid(path):
             continue
-          print('ola ' + str(self._file(view, path)))
           args = self._file(view, path).to_args()
           return (RemoteCppOpenFileCommand.NAME, args)
     if command_name == 'drag_select' and 'additive' in args:
@@ -404,4 +416,59 @@ class ProgressAnimation(object):
     if tasks > 1:
       msg += ' x' + str(tasks)
     sublime.status_message(msg)
+
+
+class PluginState(object):
+  STATE_FILE = 'RemoteCapp.state.json'
+  FILES = "remote_files"
+
+  @staticmethod
+  def _path():
+    path = os.path.join(
+      sublime.cache_path(),
+      File.PLUGIN_DIR,
+      PluginState.STATE_FILE)
+    return path
+
+  @staticmethod
+  def load():
+    global remote_files
+    path = PluginState._path()
+    if not os.path.isfile(path):
+      return
+    log('Reading PluginState from {0}...'.format(path))
+    remote_files = {}
+    with open(path, 'r') as fp:
+      content = json.load(fp)
+    all_ids = set()
+    for w in sublime.windows():
+      for v in w.views():
+        all_ids.add(v.id())
+    if PluginState.FILES in content:
+      for view_id in content[PluginState.FILES]:
+        if not int(view_id) in all_ids:
+          continue
+        remote_files[int(view_id)] = File(**content[PluginState.FILES][view_id])
+    log('{0} remote file states reloaded successfully.'.format(len(remote_files)))
+
+  @staticmethod
+  def save():
+    global remote_files
+    content = {}
+    content[PluginState.FILES] = {}
+    for view_id in remote_files:
+      file = remote_files[view_id]
+      content[PluginState.FILES][view_id] = {
+        'path': file.path,
+        'cwd': file.cwd,
+      }
+    raw = json.dumps(content, indent=4)
+    path = PluginState._path()
+    log('Writing PluginState to {0}...'.format(path))
+    dir = os.path.dirname(path)
+    if not os.path.isdir(dir):
+      os.makedirs(dir)
+    with open(path, 'w') as fp:
+      fp.write(raw)
+    log('Successully wrote {0} bytes of PluginState.'.format(len(raw)))
 
