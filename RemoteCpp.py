@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import traceback
 
 from subprocess import PIPE
 
@@ -32,7 +33,7 @@ thread_pool = None
 
 # key corresponds to View.id().
 # value is an instance of 'class File' defined in this file.
-file_state = {}
+remote_files = {}
 
 
 ##############################################################
@@ -47,8 +48,8 @@ def plugin_loaded():
 
 class SaveFileEventListener(sublime_plugin.EventListener):
   def on_post_save(self, view):
-    if view.id() in file_state:
-      file = file_state[view.id()]
+    if view.id() in remote_files:
+      file = remote_files[view.id()]
       log('Saving file: ' + str())
       runnable = lambda : self._run_in_the_background(file)
       thread_pool.run(runnable)
@@ -73,6 +74,8 @@ class ListFilesEventListener(sublime_plugin.EventListener):
         if reg.empty():
           line = view.line(reg)
           path = view.substr(line).strip()
+          if not self._is_valid(path):
+            continue
           print('ola ' + str(self._file(view, path)))
           args = self._file(view, path).to_args()
           return (RemoteCppOpenFileCommand.NAME, args)
@@ -90,13 +93,16 @@ class ListFilesEventListener(sublime_plugin.EventListener):
       diff = sel.difference(self._sel)
       for point in diff:
         path = view.substr(view.line(point))
-        args = self._file(view, path).to_args()
-        view.run_command(RemoteCppOpenFileCommand.NAME, args)
-        return
-      log('Would open file: ' + str(args))
+        if self._is_valid(path):
+          args = self._file(view, path).to_args()
+          view.run_command(RemoteCppOpenFileCommand.NAME, args)
+          return
     log('post: cmd=[{cmd}] args=[{args}]'.format(
         cmd=command_name, args=str(args)), type='on_text_command')
     return
+
+  def _is_valid(self, line):
+    return len(line.strip()) > 0 and not line.strip().startswith('#')
 
   def _cwd(self, view):
     line = view.substr(view.line(0))
@@ -141,9 +147,10 @@ class RemoteCppRefreshCache(sublime_plugin.TextCommand):
     files = []
     roots = set()
     for view in window.views():
-      if view.id() in file_state:
-        file = file_state[view.id()]
+      if view.id() in remote_files:
+        file = remote_files[view.id()]
         files.append(file)
+        root = file.local_root()
         log('Deleting local cache directory [{0}]...'.format(root))
         shutil.rmtree(root)
     for file in files:
@@ -177,7 +184,7 @@ class RemoteCppOpenFileCommand(sublime_plugin.TextCommand):
 
     def _open_file(self, window, file):
       view = window.open_file(file.local_path())
-      file_state[view.id()] = file
+      remote_files[view.id()] = file
 
 
 class RemoteCppListFilesCommand(sublime_plugin.TextCommand):
@@ -273,7 +280,6 @@ def run_cmd(cmd_list):
     raise Exception('Problems running cmd [{cmd}]'.format(
         cmd=' '.join(cmd_list)
     ))
-  # print(out)
   return out
 
 def time_str():
@@ -282,6 +288,9 @@ def time_str():
 def log(msg, type=''):
   if type in LOG_TYPES:
     print(msg)
+
+def log_exception(msg):
+  print(msg + '\n + ' + traceback.format_exc())
 
 def md5(msg):
   m = hashlib.md5()
@@ -343,8 +352,9 @@ class ThreadPool(object):
       try:
         callback()
       except Exception as e:
-        log('Background task failed with exception: [{exception}]'.format(
-            exception=e))
+        log_exception(
+            'Background task failed with exception: [{exception}]'.format(
+                exception=e))
       with self._lock:
         self._tasks_running -= 1
     log('tasks running = ' + str(self._tasks_running))
@@ -377,14 +387,8 @@ class ProgressAnimation(object):
       else:
         sublime.status_message('')
     except Exception as e:
-      log('Exception running animation: ' + e)
+      log_exception('Exception running animation: ' + e)
       sublime.status_message('')
-
-  # def _draw_animation(self):
-  #   msg = list('[' + ' ' * self._len + ']')
-  #   msg[abs(self._pos - self._len)] = '='
-  #   msg = ''.join(msg)
-  #   sublime.status_message(msg)
 
   def _draw_animation(self):
     water = ' '

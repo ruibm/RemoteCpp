@@ -11,8 +11,8 @@ X Wire up mouse cmd click to open the files.
 X Event listener for saving files.
 X Implement refreshing the cache.
 X scp copy the local file up to the server again.
+X Add settings to configure cwd, ssh, scp, ...
 
-- Add settings to configure cwd, ssh, scp, ...
 - Jump between header and cpp.
 - Follow includes in cpp files.
 - Allow remote building.
