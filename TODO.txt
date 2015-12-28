@@ -13,9 +13,10 @@ X Implement refreshing the cache.
 X scp copy the local file up to the server again.
 X Add settings to configure cwd, ssh, scp, ...
 X Persist the internal state of the plugin and reload it at start time.
-- Follow includes in cpp files.
+X Create sample C++ project to carry on development while offline.
 
-- Jump between header and cpp.
+- Follow includes in cpp files based in the file list.
+- Jump between header and cpp based in the file list.
 - Allow remote building.
 
 - Command to refresh all open local files.

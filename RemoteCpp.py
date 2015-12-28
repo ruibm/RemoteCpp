@@ -63,7 +63,10 @@ thread_pool = None
 
 # key corresponds to View.id().
 # value is an instance of 'class File' defined in this file.
-remote_files = {}
+# remote_files = {}
+
+# An instance of PluginState class. Initialised in plugin_loaded().
+state = None
 
 
 ##############################################################
@@ -71,10 +74,10 @@ remote_files = {}
 ##############################################################
 
 def plugin_loaded():
-  global thread_pool
+  global thread_pool, state
   thread_pool = ThreadPool(1)
   try:
-    PluginState.load()
+    state = PluginState.load()
   except:
     log_exception('Critical problem loading the plugin state file.')
     # TODO(ruibm): Potentially mv the file to $NAME.old
@@ -82,8 +85,9 @@ def plugin_loaded():
 
 
 def plugin_unloaded():
+  global state
   try:
-    PluginState.save()
+    state.save()
   except:
     log_exception("Critical failure saving RemoteCpp plugin state.")
 
@@ -159,7 +163,7 @@ class FollowIncludeEventListener(LineSelectorEventListener):
   REGEX = re.compile('^.+["<](.+)[">].+$')
 
   def is_enabled(self, view):
-    return view.id() in remote_files
+    return None != state.file(view.id())
 
   def is_valid(self, line):
     match = self.REGEX.match(line)
@@ -175,8 +179,8 @@ class FollowIncludeEventListener(LineSelectorEventListener):
 
 class SaveFileEventListener(sublime_plugin.EventListener):
   def on_post_save(self, view):
-    if view.id() in remote_files:
-      file = remote_files[view.id()]
+    file = state.file(view.id())
+    if file:
       log('Saving file: ' + str())
       runnable = lambda : self._run_in_the_background(file)
       thread_pool.run(runnable)
@@ -280,8 +284,8 @@ class RemoteCppRefreshCache(sublime_plugin.TextCommand):
     files = []
     roots = set()
     for view in window.views():
-      if view.id() in remote_files:
-        file = remote_files[view.id()]
+      file = state.file(view.id())
+      if file:
         files.append(file)
         roots.add(file.local_root())
     for root in roots:
@@ -319,7 +323,7 @@ class RemoteCppOpenFileCommand(sublime_plugin.TextCommand):
 
     def _open_file(self, window, file):
       view = window.open_file(file.local_path())
-      remote_files[view.id()] = file
+      state.set_file(view.id(), file)
 
 
 class RemoteCppListFilesCommand(sublime_plugin.TextCommand):
@@ -522,7 +526,33 @@ class ProgressAnimation(object):
 
 class PluginState(object):
   STATE_FILE = 'RemoteCpp.state.json'
-  FILES = "remote_files"
+  FILES = 'remote_files'
+  LIST = 'file_list'
+
+  def __init__(self, state=dict()):
+    self.state = state
+    if not self.FILES in self.state:
+      self.state[self.FILES] = {}
+    if not self.LIST in self.state:
+      self.state[self.LIST] = {}
+
+  def file(self, view_id):
+    view_id = int(view_id)
+    if view_id in self.state[self.FILES]:
+      return File(**self.state[self.FILES][view_id])
+    return None
+
+  def set_file(self, view_id, file):
+    self.state[FILES][int(view_id)] = file.to_args()
+
+  def list(self, window_id):
+    window_id = int(window_id)
+    if window_id in self.state[self.LIST]:
+      return self.state[self.LIST][window_id]
+    return None
+
+  def set_list(self, window_id, file_list):
+    self.state[LIST][int(window_id)] = file.to_args()
 
   @staticmethod
   def _path():
@@ -532,41 +562,37 @@ class PluginState(object):
       PluginState.STATE_FILE)
     return path
 
+  def gc(self):
+    all_views = set()
+    all_windows = set()
+    for w in sublime.windows():
+      all_windows = w.id()
+      for v in w.views():
+        all_views.add(v.id())
+    for view_id in self.state[self.FILES]:
+      if not view_id in all_views:
+        del self.state[self.FILES][view_id]
+    for window_id in self.state[self.LIST]:
+      if not window_id in all_windows:
+        del self.state[self.LIST][window_id]
+
   @staticmethod
   def load():
-    global remote_files
     path = PluginState._path()
     if not os.path.isfile(path):
       return
-    log('Reading PluginState from {0}...'.format(path))
-    remote_files = {}
+    log('Reading PluginState from [{0}]...'.format(path))
     with open(path, 'r') as fp:
       content = json.load(fp)
-    all_ids = set()
-    for w in sublime.windows():
-      for v in w.views():
-        all_ids.add(v.id())
-    if PluginState.FILES in content:
-      for view_id in content[PluginState.FILES]:
-        if not int(view_id) in all_ids:
-          continue
-        remote_files[int(view_id)] = File(**content[PluginState.FILES][view_id])
-    log('{0} remote file states reloaded successfully.'.format(len(remote_files)))
+    state = PluginState(content)
+    state.gc()
+    log('Reloaded successfully the PluginState.')
+    return state
 
-  @staticmethod
-  def save():
-    global remote_files
-    content = {}
-    content[PluginState.FILES] = {}
-    for view_id in remote_files:
-      file = remote_files[view_id]
-      content[PluginState.FILES][view_id] = {
-        'path': file.path,
-        'cwd': file.cwd,
-      }
-    raw = json.dumps(content, indent=4)
-    path = PluginState._path()
-    log('Writing PluginState to {0}...'.format(path))
+  def save(self):
+    raw = json.dumps(self.state, indent=2)
+    path = self._path()
+    log('Writing PluginState to [{0}]...'.format(path))
     dir = os.path.dirname(path)
     if not os.path.isdir(dir):
       os.makedirs(dir)
