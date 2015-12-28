@@ -262,6 +262,13 @@ class Commands(object):
     view.run_command(RemoteCppAppendTextCommand.NAME, { 'text': text })
 
 
+class HelloRuiCommand(sublime_plugin.TextCommand):
+  NAME = 'hello_rui'
+
+  def run(self, edit):
+    log('HELLO RUI!!!!!!!!!!')
+
+
 class RemoteCppRefreshCache(sublime_plugin.TextCommand):
   NAME = 'remote_cpp_refresh_cache'
 
@@ -332,7 +339,8 @@ class RemoteCppListFilesCommand(sublime_plugin.TextCommand):
         files = run_cmd((
             s_ssh(), '-p {0}'.format(s_ssh_port()), 'localhost',
             'cd {0}; '.format(s_cwd()) +
-            'find . -maxdepth 5 -not -path \'*/\\.*\' -type f -printf "%P\\n"'))
+            'find . -maxdepth 5 -not -path \'*/\\.*\' -type f -print' +
+            ' | sed -e \'s|^./||\''))
         files = '\n'.join(sorted(files.split('\n'), key=lambda s: s.lower()))
         files = '{cwd_prefix}{cwd}\n\n{files}'.format(
             cwd_prefix=CWD_PREFIX,
@@ -368,7 +376,7 @@ def download_file(file):
   log('Downloading the file [{file}]...'.format(file=file.remote_path()))
   run_cmd((
       'scp',
-      '-P', '8888',
+      '-P', str(s_ssh_port()),
       'localhost:{path}'.format(path=file.remote_path()),
       '{path}'.format(path=file.local_path())
   ))
