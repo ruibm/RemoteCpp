@@ -66,18 +66,19 @@ thread_pool = None
 # remote_files = {}
 
 # An instance of PluginState class. Initialised in plugin_loaded().
-state = None
+state = PluginState()
 
 
 ##############################################################
 # Sublime EventListeners
 ##############################################################
 
+
 def plugin_loaded():
   global thread_pool, state
   thread_pool = ThreadPool(1)
   try:
-    state = PluginState.load()
+    state.load()
   except:
     log_exception('Critical problem loading the plugin state file.')
     # TODO(ruibm): Potentially mv the file to $NAME.old
@@ -90,6 +91,12 @@ def plugin_unloaded():
     state.save()
   except:
     log_exception("Critical failure saving RemoteCpp plugin state.")
+
+
+class PluginStateListener(sublime_plugin.EventListener):
+  def on_close(self, view):
+    # Let's not leak memory in the PluginState.
+    state.gc()
 
 
 class LineSelectorEventListener(sublime_plugin.EventListener):
@@ -340,20 +347,24 @@ class RemoteCppListFilesCommand(sublime_plugin.TextCommand):
     def run_in_the_background():
       log("Running in the background!!!")
       try:
+        # TODO(ruibm): Check if this works with find in BSD and Linux.
         files = run_cmd((
             s_ssh(), '-p {0}'.format(s_ssh_port()), 'localhost',
             'cd {0}; '.format(s_cwd()) +
             'find . -maxdepth 5 -not -path \'*/\\.*\' -type f -print' +
             ' | sed -e \'s|^./||\''))
-        files = '\n'.join(sorted(files.split('\n'), key=lambda s: s.lower()))
+        files = sorted(files.strip().split('\n'), key=lambda s: s.lower())
+        state.set_list(view.window().id(), files)
+        files = '\n'.join(files)
         files = '{cwd_prefix}{cwd}\n\n{files}'.format(
             cwd_prefix=CWD_PREFIX,
             cwd=s_cwd(),
             files=files.lstrip())
         Commands.append_text(view, files)
       except Exception as e:
-        Commands.append_text(view, 'Error listing files: [{exception}].'.format(
-          exception=e))
+        msg = 'Error listing files: [{exception}].'.format(exception=e)
+        log_exception(msg)
+        Commands.append_text(view, msg)
       log("Finished running in the background!!!")
     thread_pool.run(run_in_the_background)
 
@@ -525,16 +536,19 @@ class ProgressAnimation(object):
 
 
 class PluginState(object):
-  STATE_FILE = 'RemoteCpp.state.json'
+  STATE_FILE = 'RemoteCpp.PluginState.json'
+
+  # List of open remotes files => map<view_id, File.to_args()>
   FILES = 'remote_files'
-  LIST = 'file_list'
+  # File lists => map<window_id, files_list>
+  LISTS = 'file_list'
 
   def __init__(self, state=dict()):
     self.state = state
     if not self.FILES in self.state:
       self.state[self.FILES] = {}
-    if not self.LIST in self.state:
-      self.state[self.LIST] = {}
+    if not self.LISTS in self.state:
+      self.state[self.LISTS] = {}
 
   def file(self, view_id):
     view_id = int(view_id)
@@ -543,16 +557,16 @@ class PluginState(object):
     return None
 
   def set_file(self, view_id, file):
-    self.state[FILES][int(view_id)] = file.to_args()
+    self.state[self.FILES][int(view_id)] = file.to_args()
 
   def list(self, window_id):
     window_id = int(window_id)
-    if window_id in self.state[self.LIST]:
-      return self.state[self.LIST][window_id]
+    if window_id in self.state[self.LISTS]:
+      return self.state[self.LISTS][window_id]
     return None
 
   def set_list(self, window_id, file_list):
-    self.state[LIST][int(window_id)] = file.to_args()
+    self.state[self.LISTS][int(window_id)] = file_list
 
   @staticmethod
   def _path():
@@ -566,28 +580,25 @@ class PluginState(object):
     all_views = set()
     all_windows = set()
     for w in sublime.windows():
-      all_windows = w.id()
+      all_windows.add(w.id())
       for v in w.views():
         all_views.add(v.id())
-    for view_id in self.state[self.FILES]:
+    for view_id in tuple(self.state[self.FILES].keys()):
       if not view_id in all_views:
         del self.state[self.FILES][view_id]
-    for window_id in self.state[self.LIST]:
+    for window_id in tuple(self.state[self.LISTS].keys()):
       if not window_id in all_windows:
-        del self.state[self.LIST][window_id]
+        del self.state[self.LISTS][window_id]
 
-  @staticmethod
-  def load():
+  def load(self):
     path = PluginState._path()
     if not os.path.isfile(path):
       return
     log('Reading PluginState from [{0}]...'.format(path))
     with open(path, 'r') as fp:
-      content = json.load(fp)
-    state = PluginState(content)
-    state.gc()
+      self.state = json.load(fp)
+    self.gc()
     log('Reloaded successfully the PluginState.')
-    return state
 
   def save(self):
     raw = json.dumps(self.state, indent=2)
