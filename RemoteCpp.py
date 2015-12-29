@@ -58,6 +58,9 @@ CPP_EXTENSIONS = set([
     '.h',
     '.cc',
 ])
+FILE_LIST_PREAMBLE = '''
+# Press 'Enter' on the selected remote file to open it.
+'''.lstrip()
 
 
 ##############################################################
@@ -72,7 +75,6 @@ def plugin_loaded():
     STATE.load()
   except:
     log_exception('Critical problem loading the plugin STATE file.')
-    # TODO(ruibm): Potentially mv the file to $NAME.old
   log('RemoteCpp has loaded successfully! :)')
 
 
@@ -88,73 +90,6 @@ class PluginStateListener(sublime_plugin.EventListener):
   def on_close(self, view):
     # Let's not leak memory in the PluginState.
     STATE.gc()
-
-
-class LineSelectorListener(sublime_plugin.EventListener):
-  # Whether this EventListener is enabled for the current View.
-  def is_enabled(self, view):
-    return False
-
-  # Whether the current select line is valid.
-  def is_valid(self, line):
-    raise NotImplementedError()
-
-  # Returns a tuple (cmd, args).
-  def create_cmd(self, view, line):
-    raise NotImplementedError()
-
-  def on_text_command(self, view, command_name, args):
-    if not self.is_enabled(view):
-      return None
-    if command_name == 'insert' and args['characters'] == '\n':
-      for reg in view.sel():
-        if reg.empty():
-          line = view.line(reg)
-          path = view.substr(line).strip()
-          if not self.is_valid(path):
-            continue
-          return self.create_cmd(view, path)
-    if command_name == 'drag_select' and 'additive' in args:
-      self._sel = self._get_sel(view)
-    log('pre: cmd=[{cmd}] args=[{args}]'.format(
-        cmd=command_name, args=str(args)), type='on_text_command')
-    return None
-
-  def on_post_text_command(self, view, command_name, args):
-    if not self.is_enabled(view):
-      return
-    if command_name == 'drag_select' and 'additive' in args:
-      sel = self._get_sel(view)
-      diff = sel.difference(self._sel)
-      for point in diff:
-        path = view.substr(view.line(point))
-        if self.is_valid(path):
-          cmd, args = self.create_cmd(view, path)
-          view.run_command(cmd, args)
-          return
-    log('post: cmd=[{cmd}] args=[{args}]'.format(
-        cmd=command_name, args=str(args)), type='on_text_command')
-    return
-
-  def _is_valid(self, line):
-    return len(line.strip()) > 0 and not line.strip().startswith('#')
-
-  def _cwd(self, view):
-    line = view.substr(view.line(0))
-    cwd = line[len(CWD_PREFIX):]
-    return cwd
-
-  def _file(self, view, path):
-    cwd = self._cwd(view)
-    file = File(cwd=cwd, path=path)
-    return file
-
-  def _get_sel(self, view):
-    sel = set()
-    for reg in view.sel():
-      if reg.empty():
-        sel.add(reg.a)
-    return sel
 
 
 class SaveFileListener(sublime_plugin.EventListener):
@@ -181,14 +116,10 @@ class ListFilesListener(sublime_plugin.EventListener):
     if not RemoteCppListFilesCommand.owns_view(view):
       return None
     if command_name == 'insert' and args['characters'] == '\n':
-      for reg in view.sel():
-        if reg.empty():
-          line = view.line(reg)
-          path = view.substr(line).strip()
-          if not self._is_valid(path):
-            continue
-          args = self._file(view, path).to_args()
-          return (RemoteCppOpenFileCommand.NAME, args)
+      path = get_sel_line(view)
+      if self._is_valid_path(path):
+        args = File(cwd=s_cwd(), path=path).to_args()
+        return (RemoteCppOpenFileCommand.NAME, args)
     if command_name == 'drag_select' and 'additive' in args:
       self._sel = self._get_sel(view)
     log('pre: cmd=[{cmd}] args=[{args}]'.format(
@@ -203,7 +134,7 @@ class ListFilesListener(sublime_plugin.EventListener):
       diff = sel.difference(self._sel)
       for point in diff:
         path = view.substr(view.line(point))
-        if self._is_valid(path):
+        if self._is_valid_path(path):
           args = self._file(view, path).to_args()
           view.run_command(RemoteCppOpenFileCommand.NAME, args)
           return
@@ -211,18 +142,8 @@ class ListFilesListener(sublime_plugin.EventListener):
         cmd=command_name, args=str(args)), type='on_text_command')
     return
 
-  def _is_valid(self, line):
-    return len(line.strip()) > 0 and not line.strip().startswith('#')
-
-  def _cwd(self, view):
-    line = view.substr(view.line(0))
-    cwd = line[len(CWD_PREFIX):]
-    return cwd
-
-  def _file(self, view, path):
-    cwd = self._cwd(view)
-    file = File(cwd=cwd, path=path)
-    return file
+  def _is_valid_path(self, line):
+    return line != None and not line.strip().startswith('#')
 
   def _get_sel(self, view):
     sel = set()
@@ -409,7 +330,8 @@ class RemoteCppListFilesCommand(sublime_plugin.TextCommand):
     try:
       file_list = RemoteCppListFilesCommand.get_file_list(window)
       text = '\n'.join(file_list)
-      text = '{cwd_prefix}{cwd}\n\n{files}'.format(
+      text = '{preamble}{cwd_prefix}{cwd}\n\n{files}'.format(
+          preamble=FILE_LIST_PREAMBLE,
           cwd_prefix=CWD_PREFIX,
           cwd=s_cwd(),
           files=text.lstrip())
