@@ -1,4 +1,2 @@
 [
-    { "keys": ["ctrl+alt+super+l"], "command": "remote_cpp_list_files" },
-    { "keys": ["ctrl+alt+super+r"], "command": "remote_cpp_refresh_cache" },
 ]

@@ -52,21 +52,12 @@ def s_build_cmd():
 LS_VIEW_TITLE_PREFIX = 'ListView'
 LOG_TYPES = set(('',))
 CWD_PREFIX = '# CWD='
-
-
-##############################################################
-# Plugin Global State
-##############################################################
-
-# Initialised in plugin_loaded()
-thread_pool = None
-
-# key corresponds to View.id().
-# value is an instance of 'class File' defined in this file.
-# remote_files = {}
-
-# An instance of PluginState class. Initialised in plugin_loaded().
-state = PluginState()
+CPP_EXTENSIONS = set([
+    '.c',
+    '.cpp',
+    '.h',
+    '.cc',
+])
 
 
 ##############################################################
@@ -75,31 +66,31 @@ state = PluginState()
 
 
 def plugin_loaded():
-  global thread_pool, state
-  thread_pool = ThreadPool(1)
+  global THREAD_POOL, STATE
+  THREAD_POOL = ThreadPool(1)
   try:
-    state.load()
+    STATE.load()
   except:
-    log_exception('Critical problem loading the plugin state file.')
+    log_exception('Critical problem loading the plugin STATE file.')
     # TODO(ruibm): Potentially mv the file to $NAME.old
   log('RemoteCpp has loaded successfully! :)')
 
 
 def plugin_unloaded():
-  global state
+  global STATE
   try:
-    state.save()
+    STATE.save()
   except:
-    log_exception("Critical failure saving RemoteCpp plugin state.")
+    log_exception("Critical failure saving RemoteCpp plugin STATE.")
 
 
 class PluginStateListener(sublime_plugin.EventListener):
   def on_close(self, view):
     # Let's not leak memory in the PluginState.
-    state.gc()
+    STATE.gc()
 
 
-class LineSelectorEventListener(sublime_plugin.EventListener):
+class LineSelectorListener(sublime_plugin.EventListener):
   # Whether this EventListener is enabled for the current View.
   def is_enabled(self, view):
     return False
@@ -166,31 +157,13 @@ class LineSelectorEventListener(sublime_plugin.EventListener):
     return sel
 
 
-class FollowIncludeEventListener(LineSelectorEventListener):
-  REGEX = re.compile('^.+["<](.+)[">].+$')
-
-  def is_enabled(self, view):
-    return None != state.file(view.id())
-
-  def is_valid(self, line):
-    match = self.REGEX.match(line)
-    return match != None
-
-  def create_cmd(self, view, line):
-    match = self.REGEX.match(line)
-    path = match.group(1)
-    args = File(cwd=s.cwd(), path=path).to_args()
-    log("Sending this: {0}".format(str((RemoteCppOpenFileCommand.NAME, args))))
-    return (RemoteCppOpenFileCommand.NAME, args)
-
-
-class SaveFileEventListener(sublime_plugin.EventListener):
+class SaveFileListener(sublime_plugin.EventListener):
   def on_post_save(self, view):
-    file = state.file(view.id())
+    file = STATE.file(view.id())
     if file:
       log('Saving file: ' + str())
       runnable = lambda : self._run_in_the_background(file)
-      thread_pool.run(runnable)
+      THREAD_POOL.run(runnable)
 
   def _run_in_the_background(self, file):
     log('Saving file [{0}]...'.format(file.remote_path()))
@@ -203,7 +176,7 @@ class SaveFileEventListener(sublime_plugin.EventListener):
     log('Successsfully saved file [{0}].'.format(file.local_path()))
 
 
-class ListFilesEventListener(sublime_plugin.EventListener):
+class ListFilesListener(sublime_plugin.EventListener):
   def on_text_command(self, view, command_name, args):
     if not RemoteCppListFilesCommand.owns_view(view):
       return None
@@ -272,12 +245,94 @@ class Commands(object):
   def append_text(view, text):
     view.run_command(RemoteCppAppendTextCommand.NAME, { 'text': text })
 
+  @staticmethod
+  def open_file(view, args_to_create_file):
+    view.run_command(RemoteCppOpenFileCommand.NAME, args_to_create_file)
 
-class HelloRuiCommand(sublime_plugin.TextCommand):
-  NAME = 'hello_rui'
+  @staticmethod
+  def toggle_header_implementation(view):
+    view.run_command(RemoteCppToggleHeaderImplementationCommand.NAME)
+
+
+class RemoteCppGotoInclude(sublime_plugin.TextCommand):
+  NAME = 'remote_cpp_goto_include'
+  REGEX = re.compile('^.+["<](.+)[">].*$')
+
+  def is_enabled(self):
+    return is_remote_cpp_file(self.view) and None != self._get_sel_path()
+
+  def is_visible(self):
+    return self.is_enabled()
 
   def run(self, edit):
-    log('HELLO RUI!!!!!!!!!!')
+    path = self._get_sel_path()
+    file = File(cwd=s_cwd(), path=path)
+    Commands.open_file(self.view, file.to_args())
+
+  def _get_sel_path(self):
+    line = get_sel_line(self.view)
+    if line == None:
+      return None
+    match = self.REGEX.match(line)
+    if match == None:
+      return None
+    return match.group(1)
+
+
+class RemoteCppToggleHeaderImplementationCommand(sublime_plugin.TextCommand):
+  NAME = 'remote_cpp_toggle_header_implementation'
+
+  def is_enabled(self):
+    return is_remote_cpp_file(self.view)
+
+  def is_visible(self):
+    return is_remote_cpp_file(self.view)
+
+  def run(self, edit):
+    log("Toggling between header and implementation...")
+    view = self.view
+    window = view.window()
+    file = STATE.file(view.id())
+    file_list = STATE.list(window.id())
+    log(str(file_list))
+    if file_list == None:
+      log('No file list found so requesting one...')
+      def run_in_the_background():
+        file_list = RemoteCppListFilesCommand.get_file_list(window)
+        if type(file_list) == list:
+          Commands.toggle_header_implementation(view)
+      THREAD_POOL.run(run_in_the_background)
+      return
+    else:
+      self._toggle(file, file_list)
+
+  def _toggle(self, file, file_list):
+    orig_path, orig_extension = os.path.splitext(file.path)
+    sibblings = []
+    for file_path in file_list:
+      path, extension = os.path.splitext(file_path)
+      log('path={0} extension={1} orig_path={2} orig_extension{3}'.format(
+        path, extension,
+        orig_path, orig_extension))
+      if orig_extension != extension and orig_path == path:
+        sibblings.append(file_path)
+      sibbling_count = len(sibblings)
+    if sibbling_count == 0:
+      log('No sibbling files were found.')
+      return
+    elif sibbling_count == 1:
+      toggle_file = File(cwd=file.cwd, path=sibblings[0])
+      Commands.open_file(self.view, toggle_file.to_args())
+    else:
+      def on_select_callback(selected_index):
+        if selected_index == -1:
+          return
+        toggle_file = File(cwd=file.cwd, path=sibblings[selected_index])
+        Commands.open_file(self.view, toggle_file.to_args())
+      self.view.window().show_quick_panel(
+        items=sibblings,
+        on_select=on_select_callback,
+        selected_index=0)
 
 
 class RemoteCppRefreshCache(sublime_plugin.TextCommand):
@@ -285,13 +340,13 @@ class RemoteCppRefreshCache(sublime_plugin.TextCommand):
 
   def run(self, edit):
     runnable = lambda : self._run_in_the_background(self.view.window())
-    thread_pool.run(runnable)
+    THREAD_POOL.run(runnable)
 
   def _run_in_the_background(self, window):
     files = []
     roots = set()
     for view in window.views():
-      file = state.file(view.id())
+      file = STATE.file(view.id())
       if file:
         files.append(file)
         roots.add(file.local_root())
@@ -319,18 +374,20 @@ class RemoteCppOpenFileCommand(sublime_plugin.TextCommand):
         self._open_file(window, file)
         return
       # Otherwise let's copy the file locally.
-      runnable = lambda : self._run_in_the_background(
-          window,
-          file)
-      thread_pool.run(runnable)
+      THREAD_POOL.run(lambda : self._run_in_the_background(window, file))
 
     def _run_in_the_background(self, window, file):
-      download_file(file)
-      self._open_file(window, file)
+      try:
+        download_file(file)
+        self._open_file(window, file)
+      except:
+        msg = 'Failed to open remote file:\n\n{0}'.format(file.remote_path())
+        log_exception(msg)
+        sublime.error_message(msg)
 
     def _open_file(self, window, file):
       view = window.open_file(file.local_path())
-      state.set_file(view.id(), file)
+      STATE.set_file(view.id(), file)
 
 
 class RemoteCppListFilesCommand(sublime_plugin.TextCommand):
@@ -344,29 +401,35 @@ class RemoteCppListFilesCommand(sublime_plugin.TextCommand):
         time=time_str()))
     view.set_read_only(True)
     view.set_scratch(True)
-    def run_in_the_background():
-      log("Running in the background!!!")
-      try:
-        # TODO(ruibm): Check if this works with find in BSD and Linux.
-        files = run_cmd((
-            s_ssh(), '-p {0}'.format(s_ssh_port()), 'localhost',
-            'cd {0}; '.format(s_cwd()) +
-            'find . -maxdepth 5 -not -path \'*/\\.*\' -type f -print' +
-            ' | sed -e \'s|^./||\''))
-        files = sorted(files.strip().split('\n'), key=lambda s: s.lower())
-        state.set_list(view.window().id(), files)
-        files = '\n'.join(files)
-        files = '{cwd_prefix}{cwd}\n\n{files}'.format(
-            cwd_prefix=CWD_PREFIX,
-            cwd=s_cwd(),
-            files=files.lstrip())
-        Commands.append_text(view, files)
-      except Exception as e:
-        msg = 'Error listing files: [{exception}].'.format(exception=e)
-        log_exception(msg)
-        Commands.append_text(view, msg)
-      log("Finished running in the background!!!")
-    thread_pool.run(run_in_the_background)
+    THREAD_POOL.run(lambda: self._run_in_the_background(view))
+
+  @staticmethod
+  def _run_in_the_background(view):
+    window = view.window()
+    try:
+      file_list = RemoteCppListFilesCommand.get_file_list(window)
+      text = '\n'.join(file_list)
+      text = '{cwd_prefix}{cwd}\n\n{files}'.format(
+          cwd_prefix=CWD_PREFIX,
+          cwd=s_cwd(),
+          files=text.lstrip())
+    except Exception as e:
+      log_exception('Error listing files')
+      text = 'Error listing files: [{exception}].'.format(exception=e)
+    Commands.append_text(view, text)
+
+  @staticmethod
+  def get_file_list(window):
+    """ Returns a fresh file list """
+    # TODO(ruibm): Check if this works with find in BSD and Linux.
+    files = run_cmd((
+        s_ssh(), '-p {0}'.format(s_ssh_port()), 'localhost',
+        'cd {0}; '.format(s_cwd()) +
+        'find . -maxdepth 5 -not -path \'*/\\.*\' -type f -print' +
+        ' | sed -e \'s|^./||\''))
+    files = sorted(files.strip().split('\n'), key=lambda s: s.lower())
+    STATE.set_list(window.id(), files)
+    return files
 
   @staticmethod
   def owns_view(view):
@@ -384,8 +447,28 @@ class RemoteCppAppendTextCommand(sublime_plugin.TextCommand):
 
 
 ##############################################################
-# Static Methods
+# RemoteCpp Functions
 ##############################################################
+
+def get_sel_line(view):
+  all_regs = view.sel()
+  if len(all_regs) > 1:
+    log('Only one selection must exist.')
+    return None
+  lines = view.lines(all_regs[0])
+  if len(lines) != 1:
+    log('Selection can only affect one line.')
+    return None
+  line = lines[0]
+  text = view.substr(line)
+  return text
+
+def is_remote_cpp_file(view):
+  file = STATE.file(view.id())
+  if file == None:
+    return False
+  _, extension = os.path.splitext(file.path)
+  return extension.lower() in CPP_EXTENSIONS
 
 def download_file(file):
   log('Downloading the file [{file}]...'.format(file=file.remote_path()))
@@ -428,7 +511,7 @@ def md5(msg):
 
 
 ##############################################################
-# Classes
+# RemoteCpp Classes
 ##############################################################
 
 class File(object):
@@ -551,43 +634,37 @@ class PluginState(object):
       self.state[self.LISTS] = {}
 
   def file(self, view_id):
-    view_id = int(view_id)
+    view_id = str(view_id)
     if view_id in self.state[self.FILES]:
       return File(**self.state[self.FILES][view_id])
     return None
 
   def set_file(self, view_id, file):
-    self.state[self.FILES][int(view_id)] = file.to_args()
+    self.state[self.FILES][str(view_id)] = file.to_args()
 
   def list(self, window_id):
-    window_id = int(window_id)
+    window_id = str(window_id)
     if window_id in self.state[self.LISTS]:
       return self.state[self.LISTS][window_id]
     return None
 
   def set_list(self, window_id, file_list):
-    self.state[self.LISTS][int(window_id)] = file_list
-
-  @staticmethod
-  def _path():
-    path = os.path.join(
-      sublime.cache_path(),
-      File.PLUGIN_DIR,
-      PluginState.STATE_FILE)
-    return path
+    self.state[self.LISTS][str(window_id)] = file_list
 
   def gc(self):
     all_views = set()
     all_windows = set()
     for w in sublime.windows():
-      all_windows.add(w.id())
+      all_windows.add(str(w.id()))
       for v in w.views():
-        all_views.add(v.id())
+        all_views.add(str(v.id()))
     for view_id in tuple(self.state[self.FILES].keys()):
       if not view_id in all_views:
+        log('Deleting file for view id [{0}].'.format(view_id))
         del self.state[self.FILES][view_id]
     for window_id in tuple(self.state[self.LISTS].keys()):
       if not window_id in all_windows:
+        log('Deleting file_list for window id [{0}].'.format(window_id))
         del self.state[self.LISTS][window_id]
 
   def load(self):
@@ -597,7 +674,7 @@ class PluginState(object):
     log('Reading PluginState from [{0}]...'.format(path))
     with open(path, 'r') as fp:
       self.state = json.load(fp)
-    self.gc()
+    # self.gc()
     log('Reloaded successfully the PluginState.')
 
   def save(self):
@@ -611,3 +688,25 @@ class PluginState(object):
       fp.write(raw)
     log('Successully wrote {0} bytes of PluginState.'.format(len(raw)))
 
+  @staticmethod
+  def _path():
+    path = os.path.join(
+      sublime.cache_path(),
+      File.PLUGIN_DIR,
+      PluginState.STATE_FILE)
+    return path
+
+
+##############################################################
+# Plugin Global State
+##############################################################
+
+# Initialised in plugin_loaded()
+THREAD_POOL = None
+
+# key corresponds to View.id().
+# value is an instance of 'class File' defined in this file.
+# remote_files = {}
+
+# An instance of PluginState class. Initialised in plugin_loaded().
+STATE = PluginState()
