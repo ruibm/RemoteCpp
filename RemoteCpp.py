@@ -9,10 +9,12 @@ import json
 import os
 import os.path
 import re
+import select
 import shutil
 import subprocess
 import sys
 import threading
+import time
 import traceback
 
 from subprocess import PIPE
@@ -42,7 +44,7 @@ def s_scp():
   return _get_or_default('remote_cpp_scp', 'scp')
 
 def s_build_cmd():
-  return _get_or_default('build_cmd', 'buck build')
+  return _get_or_default('remote_cpp_build_cmd', 'buck build')
 
 
 ##############################################################
@@ -51,7 +53,6 @@ def s_build_cmd():
 
 LS_VIEW_TITLE_PREFIX = 'ListView'
 LOG_TYPES = set(('',))
-CWD_PREFIX = '# CWD='
 CPP_EXTENSIONS = set([
     '.c',
     '.cpp',
@@ -60,6 +61,9 @@ CPP_EXTENSIONS = set([
 ])
 FILE_LIST_PREAMBLE = '''
 # Press 'Enter' on the selected remote file to open it.
+#
+# CWD={cwd}
+# Took {millis} millis to list all files.
 '''.lstrip()
 
 
@@ -79,17 +83,19 @@ def plugin_loaded():
 
 
 def plugin_unloaded():
-  global STATE
+  global THREAD_POOL, STATE
   try:
     STATE.save()
   except:
     log_exception("Critical failure saving RemoteCpp plugin STATE.")
+  THREAD_POOL.close()
 
 
 class PluginStateListener(sublime_plugin.EventListener):
   def on_close(self, view):
     # Let's not leak memory in the PluginState.
-    STATE.gc()
+    # STATE.gc()  # NOT A GOOD IDEA AFTER ALL
+    pass
 
 
 class SaveFileListener(sublime_plugin.EventListener):
@@ -175,7 +181,44 @@ class Commands(object):
     view.run_command(RemoteCppToggleHeaderImplementationCommand.NAME)
 
 
-class RemoteCppGotoInclude(sublime_plugin.TextCommand):
+class RemoteCppBuildCommand(sublime_plugin.TextCommand):
+  NAME = 'remote_cpp_build'
+  VIEW_PREFIX = 'Build'
+
+  def run(self, edit):
+    view = self.view.window().new_file()
+    view.set_name('{prefix} [{time}]'.format(
+        prefix=RemoteCppBuildCommand.VIEW_PREFIX,
+        time=time_str()))
+    view.set_read_only(True)
+    view.set_scratch(True)
+    status = '[{time}] Building with cmd [{cmd}]...\n\n'.format(
+        time=time_str(),
+        cmd=self._build_cmd())
+    Commands.append_text(view, status)
+    THREAD_POOL.run(lambda : self._run_in_the_background(view))
+
+  def _build_cmd(self):
+    cwd = s_cwd()
+    build_cmd = s_build_cmd()
+    return "cd {cwd} && {build}".format(
+        cwd=cwd,
+        build=build_cmd,
+    )
+
+  def _run_in_the_background(self, view):
+    secs = time.time()
+    listener = AppendToViewListener(view)
+    ssh_cmd_async(self._build_cmd(), listener)
+    millis = int(1000 * (time.time() - secs))
+    status = '\n[{time}] Build finished in [{millis}] millis.'.format(
+      time=time_str(),
+      millis=millis,
+    )
+    Commands.append_text(view, status)
+
+
+class RemoteCppGotoIncludeCommand(sublime_plugin.TextCommand):
   NAME = 'remote_cpp_goto_include'
   REGEX = re.compile('^.+["<](.+)[">].*$')
 
@@ -215,7 +258,6 @@ class RemoteCppToggleHeaderImplementationCommand(sublime_plugin.TextCommand):
     window = view.window()
     file = STATE.file(view.id())
     file_list = STATE.list(window.id())
-    log(str(file_list))
     if file_list == None:
       log('No file list found so requesting one...')
       def run_in_the_background():
@@ -230,21 +272,22 @@ class RemoteCppToggleHeaderImplementationCommand(sublime_plugin.TextCommand):
   def _toggle(self, file, file_list):
     orig_path, orig_extension = os.path.splitext(file.path)
     sibblings = []
+    log('Into the loop...')
     for file_path in file_list:
       path, extension = os.path.splitext(file_path)
-      log('path={0} extension={1} orig_path={2} orig_extension{3}'.format(
-        path, extension,
-        orig_path, orig_extension))
       if orig_extension != extension and orig_path == path:
         sibblings.append(file_path)
-      sibbling_count = len(sibblings)
+    sibbling_count = len(sibblings)
+    log('Out of the loop...')
     if sibbling_count == 0:
       log('No sibbling files were found.')
       return
     elif sibbling_count == 1:
+      log('Only one file found so displaying it.')
       toggle_file = File(cwd=file.cwd, path=sibblings[0])
       Commands.open_file(self.view, toggle_file.to_args())
     else:
+      log('Multiple matching files found: [{0}].'.format(', '.join(sibblings)))
       def on_select_callback(selected_index):
         if selected_index == -1:
           return
@@ -284,8 +327,8 @@ class RemoteCppRefreshCache(sublime_plugin.TextCommand):
 class RemoteCppOpenFileCommand(sublime_plugin.TextCommand):
     NAME = 'remote_cpp_open_file'
 
-    def run(self, edit, **args):
-      file = File(**args)
+    def run(self, edit, **args_to_create_file):
+      file = File(**args_to_create_file)
       log("Opening => " + file.remote_path())
       remote_path = file.remote_path()
       local_path = file.local_path()
@@ -328,12 +371,16 @@ class RemoteCppListFilesCommand(sublime_plugin.TextCommand):
   def _run_in_the_background(view):
     window = view.window()
     try:
+      start_secs = time.time()
       file_list = RemoteCppListFilesCommand.get_file_list(window)
       text = '\n'.join(file_list)
-      text = '{preamble}{cwd_prefix}{cwd}\n\n{files}'.format(
-          preamble=FILE_LIST_PREAMBLE,
-          cwd_prefix=CWD_PREFIX,
-          cwd=s_cwd(),
+      end_secs = time.time()
+      delta_millis = int((end_secs - start_secs) * 1000)
+      preamble = FILE_LIST_PREAMBLE.format(
+        cwd=s_cwd(),
+        millis=delta_millis)
+      text = '{preamble}\n\n{files}'.format(
+          preamble=preamble,
           files=text.lstrip())
     except Exception as e:
       log_exception('Error listing files')
@@ -364,77 +411,74 @@ class RemoteCppAppendTextCommand(sublime_plugin.TextCommand):
   def run(self, edit, text='NO_TEXT_PROVIDED'):
     view = self.view
     view.set_read_only(False)
-    view.insert(edit, 0, text)
+    view.insert(edit, view.size(), text)
     view.set_read_only(True)
-
-
-##############################################################
-# RemoteCpp Functions
-##############################################################
-
-def get_sel_line(view):
-  all_regs = view.sel()
-  if len(all_regs) > 1:
-    log('Only one selection must exist.')
-    return None
-  lines = view.lines(all_regs[0])
-  if len(lines) != 1:
-    log('Selection can only affect one line.')
-    return None
-  line = lines[0]
-  text = view.substr(line)
-  return text
-
-def is_remote_cpp_file(view):
-  file = STATE.file(view.id())
-  if file == None:
-    return False
-  _, extension = os.path.splitext(file.path)
-  return extension.lower() in CPP_EXTENSIONS
-
-def download_file(file):
-  log('Downloading the file [{file}]...'.format(file=file.remote_path()))
-  run_cmd((
-      'scp',
-      '-P', str(s_ssh_port()),
-      'localhost:{path}'.format(path=file.remote_path()),
-      '{path}'.format(path=file.local_path())
-  ))
-  log('Done downloading the file into [{file}].'.format(file=file.local_path()))
-
-def run_cmd(cmd_list):
-  proc = subprocess.Popen(cmd_list,
-      stdin=None,
-      stdout=subprocess.PIPE,
-      stderr=subprocess.PIPE,
-      bufsize=1)
-  out = proc.stdout.read().decode('utf-8')
-  proc.wait()
-  if proc.returncode != 0:
-    raise Exception('Problems running cmd [{cmd}]'.format(
-        cmd=' '.join(cmd_list)
-    ))
-  return out
-
-def time_str():
-  return datetime.datetime.now().strftime("%Y-%m-%d_%Hh%Mm%Ss")
-
-def log(msg, type=''):
-  if type in LOG_TYPES:
-    print(msg)
-
-def log_exception(msg):
-  print(msg + '\n + ' + traceback.format_exc())
-
-def md5(msg):
-  m = hashlib.md5()
-  m.update(msg.encode())
-  return m.hexdigest()
+    view.show(view.size() + 1)
 
 
 ##############################################################
 # RemoteCpp Classes
 ##############################################################
+
+
+class CmdListener(object):
+  def on_stdout(self, line):
+    log('stdout: ' + line)
+
+  def on_stderr(self, line):
+    log('stderr: ' + line)
+
+  def on_exit(self, exit_code):
+    log('Exit code: {0}'.format(exit_code))
+
+
+class AppendToViewListener(CmdListener):
+  def __init__(self, view):
+    self._view = view
+
+  def on_stdout(self, line):
+    Commands.append_text(self._view, line)
+
+  def on_stderr(self, line):
+    Commands.append_text(self._view, line)
+
+  def on_exit(self, exit_code):
+    if exit_code == 0:
+      line = '[{time}] Command finished successfully.\n'.format(
+        time=time_str(),
+      )
+    else:
+      line = '[{time}] Command failed with exit code [{code}].\n'.format(
+        code=exit_code,
+        time=time_str(),
+      )
+    Commands.append_text(self._view, line)
+
+
+class CaptureCmdListener(CmdListener):
+  def __init__(self):
+    self._out = []
+    self._err = []
+    self._exit_code = None
+
+  def on_stdout(self, line):
+    self._out.append(line)
+
+  def on_stderr(self, line):
+    self._err.append(line)
+
+  def on_exit(self, exit_code):
+    self._exit_code = exit_code
+
+  def stdout(self):
+    return ''.join(self._out)
+
+  def stderr(self):
+    return ''.join(self._err)
+
+  def exit_code(self):
+    return self._exit_code
+
 
 class File(object):
   PLUGIN_DIR = 'RemoteCpp'
@@ -476,12 +520,13 @@ class ThreadPool(object):
   def __init__(self, number_threads):
     self._lock = threading.Lock()
     self._tasks_running = 0
+    self._progress_animation = None
 
   def run(self, callback):
     with self._lock:
       self._tasks_running += 1
       if self._tasks_running == 1:
-        ProgressAnimation(self.tasks_running).start()
+        self._progress_animation = ProgressAnimation(self.tasks_running).start()
     def callback_wrapper():
       try:
         callback()
@@ -497,6 +542,11 @@ class ThreadPool(object):
   def tasks_running(self):
     with self._lock:
       return self._tasks_running
+
+  def close(self):
+    if self._progress_animation:
+      self._progress_animation.close()
+      self._progress_animation = None
 
 
 class ProgressAnimation(object):
@@ -538,6 +588,9 @@ class ProgressAnimation(object):
     if tasks > 1:
       msg += ' x' + str(tasks)
     sublime.status_message(msg)
+
+  def close(self):
+    self._tasks_running = lambda : 0
 
 
 class PluginState(object):
@@ -617,6 +670,94 @@ class PluginState(object):
       File.PLUGIN_DIR,
       PluginState.STATE_FILE)
     return path
+
+
+##############################################################
+# RemoteCpp Functions
+##############################################################
+
+def get_sel_line(view):
+  all_regs = view.sel()
+  if len(all_regs) > 1:
+    log('Only one selection must exist.')
+    return None
+  lines = view.lines(all_regs[0])
+  if len(lines) != 1:
+    log('Selection can only affect one line.')
+    return None
+  line = lines[0]
+  text = view.substr(line)
+  return text
+
+def is_remote_cpp_file(view):
+  file = STATE.file(view.id())
+  if file == None:
+    return False
+  _, extension = os.path.splitext(file.path)
+  return extension.lower() in CPP_EXTENSIONS
+
+def download_file(file):
+  log('Downloading the file [{file}]...'.format(file=file.remote_path()))
+  run_cmd((
+      'scp',
+      '-P', str(s_ssh_port()),
+      'localhost:{path}'.format(path=file.remote_path()),
+      '{path}'.format(path=file.local_path())
+  ))
+  log('Done downloading the file into [{file}].'.format(file=file.local_path()))
+
+def run_cmd(cmd_list):
+  listener = CaptureCmdListener()
+  run_cmd_async(cmd_list, listener)
+  if listener.exit_code() != 0:
+    raise Exception('Problems running cmd [{cmd}]'.format(
+        cmd=' '.join(cmd_list)
+    ))
+  return listener.stdout()
+
+def ssh_cmd_async(cmd_str, listener=CmdListener()):
+  args = [ s_ssh(), '-p {0}'.format(s_ssh_port()), 'localhost', cmd_str ]
+  run_cmd_async(args, listener)
+
+def run_cmd_async(cmd_list, listener=CmdListener()):
+  proc = subprocess.Popen(cmd_list,
+      stdin=None,
+      stdout=subprocess.PIPE,
+      stderr=subprocess.PIPE,
+      bufsize=1)
+  stdout = proc.stdout
+  stderr = proc.stderr
+  def read_fd(fd, on_text_callback):
+    # Using read() produces fewer callback calls but feels less interactive.
+    text = fd.readline().decode('utf-8')
+    on_text_callback(text)
+    return len(text)
+  while True:
+    ret = select.select([ stdout, stderr ], [], [])
+    for fd in ret[0]:
+      read_bytes = 0
+      if fd == stdout:
+        read_bytes += read_fd(stdout, listener.on_stdout)
+      if fd == stderr:
+        read_bytes += read_fd(stderr, listener.on_stderr)
+    if read_bytes == 0 and proc.poll() != None:
+      listener.on_exit(proc.returncode)
+      return
+
+def time_str():
+  return datetime.datetime.now().strftime("%Y-%m-%d_%Hh%Mm%Ss")
+
+def log(msg, type=''):
+  if type in LOG_TYPES:
+    print(msg)
+
+def log_exception(msg):
+  print(msg + '\n + ' + traceback.format_exc())
+
+def md5(msg):
+  m = hashlib.md5()
+  m.update(msg.encode())
+  return m.hexdigest()
 
 
 ##############################################################

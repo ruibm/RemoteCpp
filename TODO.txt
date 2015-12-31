@@ -14,13 +14,21 @@ X scp copy the local file up to the server again.
 X Add settings to configure cwd, ssh, scp, ...
 X Persist the internal state of the plugin and reload it at start time.
 X Create sample C++ project to carry on development while offline.
+X Goto includes in cpp files based in the file list.
+X Jump between header and cpp based in the file list.
+X Command to refresh all open local files.
+X Adding setting for base path.
+X Add is_enabled methods to the TextCommands.
 
-- Follow includes in cpp files based in the file list.
-- Jump between header and cpp based in the file list.
-- Allow remote building.
-
-- Command to refresh all open local files.
+- Create file by typing the path. (opens if already exists)
+- Opening file by typing the path.
+- Allow remote building and pull output.
+- Goto to error from inside the remote build file.
+- List files in current file's directory.
 - Command to refresh current open file.
-- Adding setting for base path.
+- Create new remote file.
+- Rename remote file.
 
-- Add is_enabled methods to the TextCommands.
+
+# Will disconnect after (ServerAliveCountMax * ServerAliveInterval) seconds.
+ssh -o TCPKeepAlive=yes -o ServerAliveCountMax=1000000 -o ServerAliveInterval=30 -L 8888:localhost:22 $DEV
