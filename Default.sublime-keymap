@@ -1,7 +1,8 @@
 [
-    { "keys": ["ctrl+alt+super+l"], "command": "remote_cpp_list_files" },
-    { "keys": ["ctrl+alt+super+r"], "command": "remote_cpp_refresh_cache" },
-    { "keys": ["ctrl+alt+super+b"], "command": "remote_cpp_build" },
+    { "keys": ["alt+super+l"], "command": "remote_cpp_list_files" },
+    { "keys": ["alt+super+r"], "command": "remote_cpp_refresh_cache" },
+    { "keys": ["alt+super+b"], "command": "remote_cpp_build" },
+    { "keys": ["alt+super+n"], "command": "remote_cpp_new_file" },
     { "keys": ["super+enter"], "command": "remote_cpp_goto_include" },
     { "keys": ["super+alt+up"], "command": "remote_cpp_toggle_header_implementation" },
 ]

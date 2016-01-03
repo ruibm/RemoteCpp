@@ -19,16 +19,19 @@ X Jump between header and cpp based in the file list.
 X Command to refresh all open local files.
 X Adding setting for base path.
 X Add is_enabled methods to the TextCommands.
+X Allow remote building and pull output.
+X Create file by typing the path. (opens if already exists)
 
-- Create file by typing the path. (opens if already exists)
-- Opening file by typing the path.
-- Allow remote building and pull output.
+- Open file by typing the path.
 - Goto to error from inside the remote build file.
 - List files in current file's directory.
 - Command to refresh current open file.
-- Create new remote file.
 - Rename remote file.
+- Index properly the possible ToggleFiles at ListFiles time.
+- Zip the Plugin's state file.
+- When a file is renamed update directly the file list to match.
+- Implement fast file open (with selection box).
 
 
 # Will disconnect after (ServerAliveCountMax * ServerAliveInterval) seconds.
-ssh -o TCPKeepAlive=yes -o ServerAliveCountMax=1000000 -o ServerAliveInterval=30 -L 8888:localhost:22 $DEV
+ssh -o TCPKeepAlive=yes -o ServerAliveCountMax=1000000 -o ServerAliveInterval=3600 -L 8888:localhost:22 $DEV

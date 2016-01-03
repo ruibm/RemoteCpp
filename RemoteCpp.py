@@ -168,17 +168,62 @@ class Commands(object):
   def __init__(self):
     raise Exception('Not to be instantiated.')
 
+
   @staticmethod
   def append_text(view, text):
+    ''' Appends the text and moves scroll to the bottom '''
     view.run_command(RemoteCppAppendTextCommand.NAME, { 'text': text })
 
   @staticmethod
   def open_file(view, args_to_create_file):
+    ''' Fails if file does not exist '''
     view.run_command(RemoteCppOpenFileCommand.NAME, args_to_create_file)
 
   @staticmethod
   def toggle_header_implementation(view):
     view.run_command(RemoteCppToggleHeaderImplementationCommand.NAME)
+
+
+class RemoteCppNewFileCommand(sublime_plugin.TextCommand):
+  NAME = 'remote_cpp_new_file'
+
+  def run(self, edit):
+    log('Create new file!')
+    file = STATE.file(self.view.id())
+    if file == None:
+      path = s_cwd()
+      path = path + os.sep
+    else:
+      path = file.remote_path()
+    user_input = None
+    self.view.window().show_input_panel(
+        caption='Remote File Name',
+        initial_text=path,
+        on_done=self._on_done,
+        on_change=None,
+        on_cancel=None,
+    )
+
+  def _on_done(self, new_file):
+    user_input = new_file
+    log('The user has chosen: ' + user_input)
+    cwd = s_cwd()
+    if not new_file.startswith(cwd):
+      sublime.error_message('New file must be under CWD:\n\n' + cwd)
+      return
+    path = new_file[len(cwd) + 1:]
+    runnable = lambda : self._run_in_the_background(cwd, path)
+    THREAD_POOL.run(runnable)
+
+  def _run_in_the_background(self, cwd, path):
+    new_path = os.path.join(cwd, path)
+    cmd = ('if [[ ! -f {file} ]]; then mkdir -p {dir}; fi; '
+        ' touch {file};').format(
+            file=new_path,
+            dir=os.path.dirname(new_path),
+    )
+    ssh_cmd(cmd)
+    Commands.open_file(self.view, File(cwd, path).to_args())
 
 
 class RemoteCppBuildCommand(sublime_plugin.TextCommand):
@@ -706,6 +751,10 @@ def download_file(file):
   ))
   log('Done downloading the file into [{file}].'.format(file=file.local_path()))
 
+def ssh_cmd(cmd_str):
+  listener = CaptureCmdListener()
+  return ssh_cmd_async(cmd_str, listener)
+
 def run_cmd(cmd_list):
   listener = CaptureCmdListener()
   run_cmd_async(cmd_list, listener)
@@ -728,8 +777,7 @@ def run_cmd_async(cmd_list, listener=CmdListener()):
   stdout = proc.stdout
   stderr = proc.stderr
   def read_fd(fd, on_text_callback):
-    # Using read() produces fewer callback calls but feels less interactive.
-    text = fd.readline().decode('utf-8')
+    text = fd.read().decode('utf-8')
     on_text_callback(text)
     return len(text)
   while True:
