@@ -119,45 +119,26 @@ class SaveFileListener(sublime_plugin.EventListener):
 
 class ListFilesListener(sublime_plugin.EventListener):
   def on_text_command(self, view, command_name, args):
-    if not RemoteCppListFilesCommand.owns_view(view):
-      return None
-    if command_name == 'insert' and args['characters'] == '\n':
+    if RemoteCppListFilesCommand.owns_view(view) and \
+        command_name == 'insert' and args['characters'] == '\n':
       path = get_sel_line(view)
       if self._is_valid_path(path):
         args = File(cwd=s_cwd(), path=path).to_args()
         return (RemoteCppOpenFileCommand.NAME, args)
-    if command_name == 'drag_select' and 'additive' in args:
-      self._sel = self._get_sel(view)
     log('pre: cmd=[{cmd}] args=[{args}]'.format(
         cmd=command_name, args=str(args)), type='on_text_command')
     return None
 
-  def on_post_text_command(self, view, command_name, args):
-    if not RemoteCppListFilesCommand.owns_view(view):
-      return
-    if command_name == 'drag_select' and 'additive' in args:
-      sel = self._get_sel(view)
-      diff = sel.difference(self._sel)
-      for point in diff:
-        path = view.substr(view.line(point))
-        if self._is_valid_path(path):
-          args = self._file(view, path).to_args()
-          view.run_command(RemoteCppOpenFileCommand.NAME, args)
-          return
-    log('post: cmd=[{cmd}] args=[{args}]'.format(
-        cmd=command_name, args=str(args)), type='on_text_command')
-    return
-
   def _is_valid_path(self, line):
     return line != None and not line.strip().startswith('#')
 
-  def _get_sel(self, view):
-    sel = set()
-    for reg in view.sel():
-      if reg.empty():
-        sel.add(reg.a)
-    return sel
 
+class GotoBuildErrorListener(sublime_plugin.EventListener):
+  def on_text_command(self, view, command_name, args):
+    if RemoteCppBuildCommand.owns_view(view) and \
+        command_name == 'insert' and args['characters'] == '\n':
+      Commands.goto_build_error(view)
+    return None
 
 
 ##############################################################
@@ -181,6 +162,41 @@ class Commands(object):
   @staticmethod
   def toggle_header_implementation(view):
     view.run_command(RemoteCppToggleHeaderImplementationCommand.NAME)
+
+  @staticmethod
+  def goto_build_error(view):
+    view.run_command(RemoteCppGotoBuildErrorCommand.NAME)
+
+
+class RemoteCppGotoBuildErrorCommand(sublime_plugin.TextCommand):
+  NAME = 'remote_cpp_goto_build_error'
+  REGEX = re.compile('^(.+):(\d+):(\d+):.+$')
+
+  def run(self, edit):
+    self.log('Going to build error from line...')
+    view = self.view
+    row = view.rowcol(view.sel()[0].a)[0]
+    while row >= 0:
+      self.log('Current row is [{0}].'.format(row))
+      line = view.line(view.text_point(row, 0))
+      text = view.substr(line)
+      match = self.REGEX.match(text)
+      if match:
+        self.log('Found build error in line [{0}] => [{1}]'.format(row, text))
+        path = match.group(1)
+        row = int(match.group(2))
+        col = int(match.group(3))
+        self.log('Build error in file [{path}] row=[{row}] col=[{col}].'.format(
+            path=path,
+            row=row,
+            col=col))
+        file = File(cwd=s_cwd(), path=path, row=row, col=col)
+        Commands.open_file(self.view, file.to_args())
+        return
+      row -= 1
+
+  def log(self, msg):
+    log(msg, type=type(self).__name__)
 
 
 class RemoteCppNewFileCommand(sublime_plugin.TextCommand):
@@ -239,6 +255,10 @@ class RemoteCppBuildCommand(sublime_plugin.TextCommand):
       millis=millis,
     )
     Commands.append_text(view, status)
+
+  @staticmethod
+  def owns_view(view):
+    return view.name().startswith(RemoteCppBuildCommand.VIEW_PREFIX)
 
 
 class RemoteCppGotoIncludeCommand(sublime_plugin.TextCommand):
@@ -350,18 +370,18 @@ class RemoteCppRefreshCache(sublime_plugin.TextCommand):
 class RemoteCppOpenFileCommand(sublime_plugin.TextCommand):
     NAME = 'remote_cpp_open_file'
 
-    def run(self, edit, **args_to_create_file):
-      if len(args_to_create_file) == 0:
-        show_file_input(self.view, 'Open Remote File', self._open_remote_file)
-      else:
-        file = File(**args_to_create_file)
+    def run(self, edit, cwd=None, path=None, row=0, col=0):
+      if cwd and path:
+        file = File(cwd=cwd, path=path, row=row, col=col)
         self._open_remote_file(file)
+      else:
+        show_file_input(self.view, 'Open Remote File', self._open_remote_file)
 
     def _open_remote_file(self, file):
       log("Opening => " + file.remote_path())
       remote_path = file.remote_path()
       local_path = file.local_path()
-      window = sublime.active_window()
+      window = self.view.window()
       # Shortcut if the file already exists.
       if os.path.isfile(local_path):
         self._open_file(window, file)
@@ -379,18 +399,23 @@ class RemoteCppOpenFileCommand(sublime_plugin.TextCommand):
         sublime.error_message(msg)
 
     def _open_file(self, window, file):
-      view = window.open_file(file.local_path())
+      log('rui => ' + str(file.to_args()))
+      path_row_col = '{path}:{row}:{col}'.format(
+          path=file.local_path(),
+          row=file.row,
+          col=file.col)
+      view = window.open_file(path_row_col, sublime.ENCODED_POSITION)
       STATE.set_file(view.id(), file)
 
 
 class RemoteCppListFilesCommand(sublime_plugin.TextCommand):
   NAME = 'remote_cpp_list_files'
-  WINDOW_PREFIX = 'ListFiles'
+  VIEW_PREFIX = 'ListFiles'
 
   def run(self, edit):
     view = sublime.active_window().new_file()
     view.set_name('{prefix} [{time}]'.format(
-        prefix=RemoteCppListFilesCommand.WINDOW_PREFIX,
+        prefix=RemoteCppListFilesCommand.VIEW_PREFIX,
         time=time_str()))
     view.set_read_only(True)
     view.set_scratch(True)
@@ -431,7 +456,7 @@ class RemoteCppListFilesCommand(sublime_plugin.TextCommand):
 
   @staticmethod
   def owns_view(view):
-    return view.name().startswith(RemoteCppListFilesCommand.WINDOW_PREFIX)
+    return view.name().startswith(RemoteCppListFilesCommand.VIEW_PREFIX)
 
 
 class RemoteCppAppendTextCommand(sublime_plugin.TextCommand):
@@ -512,9 +537,11 @@ class CaptureCmdListener(CmdListener):
 class File(object):
   PLUGIN_DIR = 'RemoteCpp'
 
-  def __init__(self, cwd, path):
+  def __init__(self, cwd, path, row=0, col=0):
     self.cwd = cwd
     self.path = path
+    self.col = col
+    self.row = row
 
   def remote_path(self):
     return os.path.join(self.cwd, self.path)
@@ -539,10 +566,15 @@ class File(object):
     return local_root
 
   def to_args(self):
-    return {
+    args = {
       'cwd': self.cwd,
       'path': self.path,
     }
+    if self.row != 0:
+      args['row'] = self.row
+    if self.col != 0:
+      args['col'] = self.col
+    return args
 
 
 class ThreadPool(object):
