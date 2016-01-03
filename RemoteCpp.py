@@ -168,6 +168,50 @@ class Commands(object):
     view.run_command(RemoteCppGotoBuildErrorCommand.NAME)
 
 
+class RemoteCppMoveFileCommand(sublime_plugin.TextCommand):
+  NAME = 'remote_cpp_move_file'
+
+  def is_enabled(self):
+    return None != STATE.file(self.view.id())
+
+  def is_visible(self):
+    return self.is_enabled()
+
+  def run(self, edit):
+    log('Moving file...')
+    orig_file = STATE.file(self.view.id())
+    callback = lambda dst_file: self._on_move(orig_file, dst_file)
+    show_file_input(self.view, 'Move Remote File', callback)
+
+  def _on_move(self, src_file, dst_file):
+    runnable = lambda: self._run_in_the_background(src_file, dst_file)
+    THREAD_POOL.run(runnable)
+
+  def _run_in_the_background(self, src_file, dst_file):
+    try:
+      ssh_cmd("mv '{src}' '{dst}'".format(
+          src=src_file.remote_path(),
+          dst=dst_file.remote_path()))
+    except:
+      log_exception('Failed to mv remote files.')
+      sublime.error_message(
+          'Failed to move files remotely.\n\nSRC={src}\n\nDST={dst}'.format(
+                src=src_file.remote_path(),
+                dst=dst_file.remote_path()))
+      return
+    self._rm_local_file(src_file.local_path())
+    self._rm_local_file(dst_file.local_path())
+    Commands.open_file(self.view, dst_file.to_args())
+    log(dir(self.view))
+    self.view.close()
+
+  def _rm_local_file(self, path):
+    try:
+      os.remove(path)
+    except:
+      log_exception('Problems removing file [{0}].'.format(path))
+
+
 class RemoteCppGotoBuildErrorCommand(sublime_plugin.TextCommand):
   NAME = 'remote_cpp_goto_build_error'
   REGEX = re.compile('^(.+):(\d+):(\d+):.+$')
@@ -767,9 +811,13 @@ def download_file(file):
   ))
   log('Done downloading the file into [{file}].'.format(file=file.local_path()))
 
+def create_cmd_ssh_args(cmd_str):
+  args = [ s_ssh(), '-p {0}'.format(s_ssh_port()), 'localhost', cmd_str ]
+  return args
+
 def ssh_cmd(cmd_str):
-  listener = CaptureCmdListener()
-  return ssh_cmd_async(cmd_str, listener)
+  args = create_cmd_ssh_args(cmd_str)
+  return run_cmd(args)
 
 def run_cmd(cmd_list):
   listener = CaptureCmdListener()
@@ -781,7 +829,7 @@ def run_cmd(cmd_list):
   return listener.stdout()
 
 def ssh_cmd_async(cmd_str, listener=CmdListener()):
-  args = [ s_ssh(), '-p {0}'.format(s_ssh_port()), 'localhost', cmd_str ]
+  args = create_cmd_ssh_args(cmd_str)
   run_cmd_async(args, listener)
 
 def run_cmd_async(cmd_list, listener=CmdListener()):

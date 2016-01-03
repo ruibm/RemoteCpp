@@ -1,6 +1,7 @@
 [
     { "keys": ["alt+super+o"], "command": "remote_cpp_open_file" },
     { "keys": ["alt+super+n"], "command": "remote_cpp_new_file" },
+    { "keys": ["alt+super+m"], "command": "remote_cpp_move_file" },
     { "keys": ["alt+super+l"], "command": "remote_cpp_list_files" },
     { "keys": ["alt+super+r"], "command": "remote_cpp_refresh_cache" },
     { "keys": ["alt+super+b"], "command": "remote_cpp_build" },

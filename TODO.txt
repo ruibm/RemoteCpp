@@ -23,8 +23,8 @@ X Allow remote building and pull output.
 X Create file by typing the path. (opens if already exists)
 X Open file by typing the path.
 X Goto to error from inside the remote build file.
+X Rename/move remote file.
 
-- Rename remote file.
 - Index properly the possible ToggleFiles at ListFiles time.
 - Delete remote file.
 - Index in a dict() the lookups for the toggle files.
