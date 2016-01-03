@@ -422,7 +422,7 @@ class RemoteCppOpenFileCommand(sublime_plugin.TextCommand):
         show_file_input(self.view, 'Open Remote File', self._open_remote_file)
 
     def _open_remote_file(self, file):
-      log("Opening => " + file.remote_path())
+      self.log("Opening => " + file.remote_path())
       remote_path = file.remote_path()
       local_path = file.local_path()
       window = self.view.window()
@@ -443,13 +443,16 @@ class RemoteCppOpenFileCommand(sublime_plugin.TextCommand):
         sublime.error_message(msg)
 
     def _open_file(self, window, file):
-      log('rui => ' + str(file.to_args()))
+      self.log('rui => ' + str(file.to_args()))
       path_row_col = '{path}:{row}:{col}'.format(
           path=file.local_path(),
           row=file.row,
           col=file.col)
       view = window.open_file(path_row_col, sublime.ENCODED_POSITION)
       STATE.set_file(view.id(), file)
+
+    def log(self, msg):
+      log(msg, type=type(self).__name__)
 
 
 class RemoteCppListFilesCommand(sublime_plugin.TextCommand):
