@@ -52,7 +52,7 @@ def s_build_cmd():
 ##############################################################
 
 LS_VIEW_TITLE_PREFIX = 'ListView'
-LOG_TYPES = set(('',))
+LOG_TYPES = set(('', 'RemoteCppGotoBuildErrorCommand'))
 CPP_EXTENSIONS = set([
     '.c',
     '.cpp',
@@ -813,6 +813,8 @@ def time_str():
 
 def log(msg, type=''):
   if type in LOG_TYPES:
+    if len(type) > 0:
+      msg = '{type}: {msg}'.format(type=type, msg=msg)
     print(msg)
 
 def log_exception(msg):
