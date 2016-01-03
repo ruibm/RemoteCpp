@@ -21,8 +21,8 @@ X Adding setting for base path.
 X Add is_enabled methods to the TextCommands.
 X Allow remote building and pull output.
 X Create file by typing the path. (opens if already exists)
+X Open file by typing the path.
 
-- Open file by typing the path.
 - Goto to error from inside the remote build file.
 - List files in current file's directory.
 - Command to refresh current open file.

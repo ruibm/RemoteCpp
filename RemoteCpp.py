@@ -168,7 +168,6 @@ class Commands(object):
   def __init__(self):
     raise Exception('Not to be instantiated.')
 
-
   @staticmethod
   def append_text(view, text):
     ''' Appends the text and moves scroll to the bottom '''
@@ -188,42 +187,21 @@ class RemoteCppNewFileCommand(sublime_plugin.TextCommand):
   NAME = 'remote_cpp_new_file'
 
   def run(self, edit):
-    log('Create new file!')
-    file = STATE.file(self.view.id())
-    if file == None:
-      path = s_cwd()
-      path = path + os.sep
-    else:
-      path = file.remote_path()
-    user_input = None
-    self.view.window().show_input_panel(
-        caption='Remote File Name',
-        initial_text=path,
-        on_done=self._on_done,
-        on_change=None,
-        on_cancel=None,
-    )
+    show_file_input(self.view, 'New Remote File', self._on_done)
 
-  def _on_done(self, new_file):
-    user_input = new_file
-    log('The user has chosen: ' + user_input)
-    cwd = s_cwd()
-    if not new_file.startswith(cwd):
-      sublime.error_message('New file must be under CWD:\n\n' + cwd)
-      return
-    path = new_file[len(cwd) + 1:]
-    runnable = lambda : self._run_in_the_background(cwd, path)
+  def _on_done(self, file):
+    runnable = lambda : self._run_in_the_background(file)
     THREAD_POOL.run(runnable)
 
-  def _run_in_the_background(self, cwd, path):
-    new_path = os.path.join(cwd, path)
-    cmd = ('if [[ ! -f {file} ]]; then mkdir -p {dir}; fi; '
-        ' touch {file};').format(
-            file=new_path,
-            dir=os.path.dirname(new_path),
+  def _run_in_the_background(self, file):
+    new_path = file.remote_path()
+    cmd = ('if [[ ! -f {remote_path} ]]; then mkdir -p {remote_dir}; fi; '
+        ' touch {remote_path};').format(
+            remote_path=new_path,
+            remote_dir=os.path.dirname(new_path),
     )
     ssh_cmd(cmd)
-    Commands.open_file(self.view, File(cwd, path).to_args())
+    Commands.open_file(self.view, file.to_args())
 
 
 class RemoteCppBuildCommand(sublime_plugin.TextCommand):
@@ -373,7 +351,13 @@ class RemoteCppOpenFileCommand(sublime_plugin.TextCommand):
     NAME = 'remote_cpp_open_file'
 
     def run(self, edit, **args_to_create_file):
-      file = File(**args_to_create_file)
+      if len(args_to_create_file) == 0:
+        show_file_input(self.view, 'Open Remote File', self._open_remote_file)
+      else:
+        file = File(**args_to_create_file)
+        self._open_remote_file(file)
+
+    def _open_remote_file(self, file):
       log("Opening => " + file.remote_path())
       remote_path = file.remote_path()
       local_path = file.local_path()
@@ -806,6 +790,30 @@ def md5(msg):
   m = hashlib.md5()
   m.update(msg.encode())
   return m.hexdigest()
+
+def show_file_input(view, title, on_done):
+  file = STATE.file(view.id())
+  if file == None:
+    path = s_cwd()
+    path = path + os.sep
+  else:
+    path = file.remote_path()
+  def on_done_callback(new_file):
+    log('The user has chosen: ' + new_file)
+    cwd = s_cwd()
+    if not new_file.startswith(cwd):
+      sublime.error_message('File must be under CWD:\n\n' + cwd)
+      return
+    path = new_file[len(cwd) + 1:]
+    file = File(cwd=cwd, path=path)
+    on_done(file)
+  view.window().show_input_panel(
+      caption=title,
+      initial_text=path,
+      on_done=on_done_callback,
+      on_change=None,
+      on_cancel=None,
+  )
 
 
 ##############################################################
