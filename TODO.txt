@@ -22,15 +22,18 @@ X Add is_enabled methods to the TextCommands.
 X Allow remote building and pull output.
 X Create file by typing the path. (opens if already exists)
 X Open file by typing the path.
+X Goto to error from inside the remote build file.
 
-- Goto to error from inside the remote build file.
-- List files in current file's directory.
-- Command to refresh current open file.
 - Rename remote file.
 - Index properly the possible ToggleFiles at ListFiles time.
+- Delete remote file.
+- Index in a dict() the lookups for the toggle files.
+- List files in current file's directory.
+- Command to refresh current open file.
 - Zip the Plugin's state file.
 - When a file is renamed update directly the file list to match.
 - Implement fast file open (with selection box).
+- Fix the internal state so the file list is indexed to the 'cwd'
 
 
 # Will disconnect after (ServerAliveCountMax * ServerAliveInterval) seconds.
