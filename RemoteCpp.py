@@ -187,7 +187,7 @@ class RemoteCppGrepCommand(sublime_plugin.TextCommand):
     view.window().show_input_panel(
         caption='Remote Grep',
         initial_text=text,
-        on_done=lambda t: self._on_done(self.view, t),
+        on_done=lambda t: self._on_done(view, t),
         on_change=None,
         on_cancel=None
     )
@@ -202,6 +202,12 @@ class RemoteCppGrepCommand(sublime_plugin.TextCommand):
         time=time_str()))
     view.set_read_only(True)
     view.set_scratch(True)
+    Commands.append_text(
+        view,
+        '[{time}] Grepping for [{text}] in [{cwd}]...\n\n'.format(
+            cwd=s_cwd(),
+            time=time_str(),
+            text=text,))
     runnable = lambda: self._run_in_the_background(view, text)
     THREAD_POOL.run(runnable)
 
@@ -336,14 +342,8 @@ class RemoteCppBuildCommand(sublime_plugin.TextCommand):
     )
 
   def _run_in_the_background(self, view):
-    secs = time.time()
     listener = AppendToViewListener(view)
     ssh_cmd_async(self._build_cmd(), listener)
-    millis = int(1000 * (time.time() - secs))
-    status = '\n[{time}] Build finished in [{millis}] millis.'.format(
-      time=time_str(),
-      millis=millis,
-    )
     Commands.append_text(view, status)
 
   @staticmethod
@@ -587,6 +587,7 @@ class CmdListener(object):
 class AppendToViewListener(CmdListener):
   def __init__(self, view):
     self._view = view
+    self._start_secs = time.time()
 
   def on_stdout(self, line):
     Commands.append_text(self._view, line)
@@ -596,15 +597,22 @@ class AppendToViewListener(CmdListener):
 
   def on_exit(self, exit_code):
     if exit_code == 0:
-      line = '[{time}] Command finished successfully.\n'.format(
-        time=time_str(),
+      line = ('\n\n[{time}] Command finished successfully'
+          ' in {millis} millis.\n').format(
+          time=time_str(),
+          millis=self._delta_millis(),
       )
     else:
-      line = '[{time}] Command failed with exit code [{code}].\n'.format(
-        code=exit_code,
-        time=time_str(),
+      line = ('\n\n[{time}] Command failed with exit code [{code}] '
+          'in {millis} millis.\n').format(
+          code=exit_code,
+          time=time_str(),
+          millis=self._delta_millis(),
       )
     Commands.append_text(self._view, line)
+
+  def _delta_millis(self):
+    return int(1000 * (time.time() - self._start_secs))
 
 
 class CaptureCmdListener(CmdListener):
