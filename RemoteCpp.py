@@ -46,6 +46,10 @@ def s_scp():
 def s_build_cmd():
   return _get_or_default('remote_cpp_build_cmd', 'buck build')
 
+def s_find_filters():
+  return _get_or_default('remote_cpp_find_filters',
+      "-not -path '*buck-cache*' -not -path '*buck-out*'")
+
 
 ##############################################################
 # Constants
@@ -492,11 +496,16 @@ class RemoteCppListFilesCommand(sublime_plugin.TextCommand):
   def get_file_list(window):
     """ Returns a fresh file list """
     # TODO(ruibm): Check if this works with find in BSD and Linux.
+    log('rui => ' + s_find_filters())
+    cmd_str = ('cd {cwd}; '
+        'find . -maxdepth 5 -not -path \'*/\\.*\' {filters} -type f -print'
+        ' | sed -e \'s|^./||\'').format(
+        cwd=s_cwd(),
+        filters=s_find_filters(),
+    )
     files = run_cmd((
         s_ssh(), '-p {0}'.format(s_ssh_port()), 'localhost',
-        'cd {0}; '.format(s_cwd()) +
-        'find . -maxdepth 5 -not -path \'*/\\.*\' -type f -print' +
-        ' | sed -e \'s|^./||\''))
+        cmd_str))
     files = sorted(files.strip().split('\n'), key=lambda s: s.lower())
     STATE.set_list(window.id(), files)
     return files

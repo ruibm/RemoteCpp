@@ -26,6 +26,9 @@ X Goto to error from inside the remote build file.
 X Rename/move remote file.
 
 - Index properly the possible ToggleFiles at ListFiles time.
+- Improve error handling to always notify the user when the remote connection is broken.
+- Implement grep'ing through the files for symbols.
+- Jump into line in the file where the grep'ed symbol was.
 - Delete remote file.
 - Index in a dict() the lookups for the toggle files.
 - List files in current file's directory.
@@ -35,6 +38,7 @@ X Rename/move remote file.
 - Implement fast file open (with selection box).
 - Fix the internal state so the file list is indexed to the 'cwd'
 
+= TheTimes REF 07558622 - Ashley
 
 # Will disconnect after (ServerAliveCountMax * ServerAliveInterval) seconds.
 ssh -o TCPKeepAlive=yes -o ServerAliveCountMax=1000000 -o ServerAliveInterval=3600 -L 8888:localhost:22 $DEV
