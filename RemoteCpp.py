@@ -172,6 +172,48 @@ class Commands(object):
     view.run_command(RemoteCppGotoBuildErrorCommand.NAME)
 
 
+class RemoteCppGrepCommand(sublime_plugin.TextCommand):
+  NAME = 'remote_cpp_grep'
+  VIEW_PREFIX = 'Grep'
+
+  def run(self, edit):
+    log('Grepping file...')
+    view = self.view
+    text = ''
+    if len(view.sel()) == 1:
+      lines = view.lines(view.sel()[0])
+      if len(lines) == 1:
+        text = view.substr(view.sel()[0])
+    view.window().show_input_panel(
+        caption='Remote Grep',
+        initial_text=text,
+        on_done=lambda t: self._on_done(self.view, t),
+        on_change=None,
+        on_cancel=None
+    )
+
+  def _on_done(self, orig_view, text):
+    log('Grepping for text [{0}]...'.format(text))
+    if len(text) == 0:
+      return
+    view = orig_view.window().new_file()
+    view.set_name('{prefix} [{time}]'.format(
+        prefix=self.VIEW_PREFIX,
+        time=time_str()))
+    view.set_read_only(True)
+    view.set_scratch(True)
+    runnable = lambda: self._run_in_the_background(view, text)
+    THREAD_POOL.run(runnable)
+
+  def _run_in_the_background(self, view, text):
+    arg_str = ("cd {cwd} && grep -R -n '{text}' . | sed -e 's|^./||'").format(
+        cwd=s_cwd(),
+        text=text,)
+    log('Running cmd [{cmd}]...'.format(cmd=arg_str))
+    listener = AppendToViewListener(view)
+    ssh_cmd_async(arg_str, listener)
+
+
 class RemoteCppMoveFileCommand(sublime_plugin.TextCommand):
   NAME = 'remote_cpp_move_file'
 
