@@ -50,6 +50,8 @@ def s_find_filters():
   return _get_or_default('remote_cpp_find_filters',
       "-not -path '*buck-cache*' -not -path '*buck-out*'")
 
+def s_grep_cmd():
+  return _get_or_default('remote_cpp_grep_cmd', 'grep  -R -n \'{pattern}\' .')
 
 ##############################################################
 # Constants
@@ -145,6 +147,14 @@ class GotoBuildErrorListener(sublime_plugin.EventListener):
     return None
 
 
+class GotoGrepMatchListener(sublime_plugin.EventListener):
+  def on_text_command(self, view, command_name, args):
+    if RemoteCppGotoGrepMatchCommand.is_valid(view) and \
+        command_name == 'insert' and args['characters'] == '\n':
+      Commands.goto_grep_match(view)
+    return None
+
+
 ##############################################################
 # Sublime Commands
 ##############################################################
@@ -171,6 +181,36 @@ class Commands(object):
   def goto_build_error(view):
     view.run_command(RemoteCppGotoBuildErrorCommand.NAME)
 
+  @staticmethod
+  def goto_grep_match(view):
+    view.run_command(RemoteCppGotoGrepMatchCommand.NAME)
+
+
+class RemoteCppGotoGrepMatchCommand(sublime_plugin.TextCommand):
+  NAME = 'remote_cpp_goto_grep_match'
+  REGEX = re.compile('^(.+):(\d+):.+$')
+
+  @staticmethod
+  def is_valid(view):
+    if not view.name().startswith(RemoteCppGrepCommand.VIEW_PREFIX):
+      return False
+    return None != RemoteCppGotoGrepMatchCommand.REGEX.match(get_sel_line(view))
+
+  def is_enabled(self):
+    return RemoteCppGotoGrepMatchCommand.is_valid(self.view)
+
+  def is_visible(self):
+    return self.is_enabled()
+
+  def run(self, edit):
+    line = get_sel_line(self.view)
+    match = self.REGEX.match(line)
+    path = match.group(1)
+    row = int(match.group(2))
+    col = 0
+    file = File(cwd=s_cwd(), path=path, row=row, col=col)
+    Commands.open_file(self.view, file.to_args())
+
 
 class RemoteCppGrepCommand(sublime_plugin.TextCommand):
   NAME = 'remote_cpp_grep'
@@ -179,6 +219,7 @@ class RemoteCppGrepCommand(sublime_plugin.TextCommand):
   def run(self, edit):
     log('Grepping file...')
     view = self.view
+    window = view.window()
     text = ''
     if len(view.sel()) == 1:
       lines = view.lines(view.sel()[0])
@@ -187,21 +228,22 @@ class RemoteCppGrepCommand(sublime_plugin.TextCommand):
     view.window().show_input_panel(
         caption='Remote Grep',
         initial_text=text,
-        on_done=lambda t: self._on_done(view, t),
+        on_done=lambda t: self._on_done(window, t),
         on_change=None,
         on_cancel=None
     )
 
-  def _on_done(self, orig_view, text):
+  def _on_done(self, window, text):
     log('Grepping for text [{0}]...'.format(text))
     if len(text) == 0:
       return
-    view = orig_view.window().new_file()
+    view = window.new_file()
     view.set_name('{prefix} [{time}]'.format(
         prefix=self.VIEW_PREFIX,
         time=time_str()))
     view.set_read_only(True)
     view.set_scratch(True)
+    view.settings().set("word_wrap", "false")
     Commands.append_text(
         view,
         '[{time}] Grepping for [{text}] in [{cwd}]...\n\n'.format(
@@ -212,9 +254,10 @@ class RemoteCppGrepCommand(sublime_plugin.TextCommand):
     THREAD_POOL.run(runnable)
 
   def _run_in_the_background(self, view, text):
-    arg_str = ("cd {cwd} && grep -R -n '{text}' . | sed -e 's|^./||'").format(
+    arg_template = "cd {cwd} && " + s_grep_cmd()
+    arg_str = arg_template.format(
         cwd=s_cwd(),
-        text=text,)
+        pattern=text,)
     log('Running cmd [{cmd}]...'.format(cmd=arg_str))
     listener = AppendToViewListener(view)
     ssh_cmd_async(arg_str, listener)
@@ -241,7 +284,7 @@ class RemoteCppMoveFileCommand(sublime_plugin.TextCommand):
 
   def _run_in_the_background(self, src_file, dst_file):
     try:
-      ssh_cmd("mv '{src}' '{dst}'".format(
+      ssh_cmd('mv "{src}" "{dst}"'.format(
           src=src_file.remote_path(),
           dst=dst_file.remote_path()))
     except:
@@ -322,6 +365,7 @@ class RemoteCppBuildCommand(sublime_plugin.TextCommand):
 
   def run(self, edit):
     view = self.view.window().new_file()
+    view.settings().set("word_wrap", "false")
     view.set_name('{prefix} [{time}]'.format(
         prefix=RemoteCppBuildCommand.VIEW_PREFIX,
         time=time_str()))
@@ -344,7 +388,6 @@ class RemoteCppBuildCommand(sublime_plugin.TextCommand):
   def _run_in_the_background(self, view):
     listener = AppendToViewListener(view)
     ssh_cmd_async(self._build_cmd(), listener)
-    Commands.append_text(view, status)
 
   @staticmethod
   def owns_view(view):
@@ -512,6 +555,7 @@ class RemoteCppListFilesCommand(sublime_plugin.TextCommand):
         time=time_str()))
     view.set_read_only(True)
     view.set_scratch(True)
+    view.settings().set("word_wrap", "false")
     THREAD_POOL.run(lambda: self._run_in_the_background(view))
 
   @staticmethod
@@ -902,8 +946,8 @@ def run_cmd_async(cmd_list, listener=CmdListener()):
       bufsize=1)
   stdout = proc.stdout
   stderr = proc.stderr
-  def read_fd(fd, on_text_callback):
-    text = fd.read().decode('utf-8')
+  def read_fd(read_function, on_text_callback):
+    text = read_function().decode('utf-8')
     on_text_callback(text)
     return len(text)
   while True:
@@ -911,10 +955,15 @@ def run_cmd_async(cmd_list, listener=CmdListener()):
     for fd in ret[0]:
       read_bytes = 0
       if fd == stdout:
-        read_bytes += read_fd(stdout, listener.on_stdout)
+        read_bytes += read_fd(stdout.readline, listener.on_stdout)
       if fd == stderr:
-        read_bytes += read_fd(stderr, listener.on_stderr)
+        read_bytes += read_fd(stderr.readline, listener.on_stderr)
     if read_bytes == 0 and proc.poll() != None:
+      # fd.readline() does not return the end of the stream because it does
+      # not end with a newline so we use the fd.read() call that guarantees
+      # all available characters are read.
+      read_fd(stdout.read, listener.on_stdout)
+      read_fd(stderr.read, listener.on_stderr)
       listener.on_exit(proc.returncode)
       return
 
