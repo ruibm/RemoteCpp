@@ -24,16 +24,16 @@ X Create file by typing the path. (opens if already exists)
 X Open file by typing the path.
 X Goto to error from inside the remote build file.
 X Rename/move remote file.
+X Implement grep'ing through the files for symbols.
+X Jump into line in the file where the grep'ed symbol was.
+X Refresh all files should work always.
 
-- Refresh all files should work always.
 - List files in current file's directory.
 - Implement fast file open (with selection box).
 - Index properly the possible ToggleFiles at ListFiles time.
 - Use the file index to also follow includes.
 - When displaying files from the index, display the quick option box when there are multiple options.
 - Improve error handling to always notify the user when the remote connection is broken.
-- Implement grep'ing through the files for symbols.
-- Jump into line in the file where the grep'ed symbol was.
 - Delete remote file.
 - Index in a dict() the lookups for the toggle files.
 - Command to refresh current open file.

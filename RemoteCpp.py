@@ -46,9 +46,10 @@ def s_scp():
 def s_build_cmd():
   return _get_or_default('remote_cpp_build_cmd', 'buck build')
 
-def s_find_filters():
-  return _get_or_default('remote_cpp_find_filters',
-      "-not -path '*buck-cache*' -not -path '*buck-out*'")
+def s_find_cmd():
+  return _get_or_default('remote_cpp_find_cmd',
+      ("find . -maxdepth 5 -not -path '*/\\.*' -type f -print "
+          "-not -path '*buck-cache*' -not -path '*buck-out*' "))
 
 def s_grep_cmd():
   return _get_or_default('remote_cpp_grep_cmd', 'grep  -R -n \'{pattern}\' .')
@@ -479,7 +480,8 @@ class RemoteCppRefreshCache(sublime_plugin.TextCommand):
   NAME = 'remote_cpp_refresh_cache'
 
   def run(self, edit):
-    runnable = lambda : self._run_in_the_background(self.view.window())
+    window = self.view.window()
+    runnable = lambda : self._run_in_the_background(window)
     THREAD_POOL.run(runnable)
 
   def _run_in_the_background(self, window):
@@ -582,13 +584,8 @@ class RemoteCppListFilesCommand(sublime_plugin.TextCommand):
   def get_file_list(window):
     """ Returns a fresh file list """
     # TODO(ruibm): Check if this works with find in BSD and Linux.
-    log('rui => ' + s_find_filters())
-    cmd_str = ('cd {cwd}; '
-        'find . -maxdepth 5 -not -path \'*/\\.*\' {filters} -type f -print'
-        ' | sed -e \'s|^./||\'').format(
-        cwd=s_cwd(),
-        filters=s_find_filters(),
-    )
+    cmd_template = 'cd {cwd}; ' + s_find_cmd()
+    cmd_str = cmd_template.format(cwd=s_cwd())
     files = run_cmd((
         s_ssh(), '-p {0}'.format(s_ssh_port()), 'localhost',
         cmd_str))
