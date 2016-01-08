@@ -4,6 +4,7 @@ import sublime
 import sublime_plugin
 
 import datetime
+import gzip
 import hashlib
 import json
 import os
@@ -48,8 +49,8 @@ def s_build_cmd():
 
 def s_find_cmd():
   return _get_or_default('remote_cpp_find_cmd',
-      ("find . -maxdepth 5 -not -path '*/\\.*' -type f -print "
-          "-not -path '*buck-cache*' -not -path '*buck-out*' "))
+      ("find -s . -maxdepth 5 -not -path '*/\\.*' -type f -print "
+          "-not -path '*buck-cache*' -not -path '*buck-out*'"))
 
 def s_grep_cmd():
   return _get_or_default('remote_cpp_grep_cmd', 'grep  -R -n \'{pattern}\' .')
@@ -98,14 +99,14 @@ def plugin_unloaded():
   THREAD_POOL.close()
 
 
-class PluginStateListener(sublime_plugin.EventListener):
+class PluginStateEventListener(sublime_plugin.EventListener):
   def on_close(self, view):
     # Let's not leak memory in the PluginState.
     # STATE.gc()  # NOT A GOOD IDEA AFTER ALL
     pass
 
 
-class SaveFileListener(sublime_plugin.EventListener):
+class SaveFileEventListener(sublime_plugin.EventListener):
   def on_post_save(self, view):
     file = STATE.file(view.id())
     if file:
@@ -115,7 +116,7 @@ class SaveFileListener(sublime_plugin.EventListener):
 
   def _run_in_the_background(self, file):
     log('Saving file [{0}]...'.format(file.remote_path()))
-    run_cmd((
+    run_cmd_async((
         s_scp(),
         '-P', str(s_ssh_port()),
         '{path}'.format(path=file.local_path()),
@@ -124,23 +125,25 @@ class SaveFileListener(sublime_plugin.EventListener):
     log('Successsfully saved file [{0}].'.format(file.local_path()))
 
 
-class ListFilesListener(sublime_plugin.EventListener):
+class ListFilesEventListener(sublime_plugin.EventListener):
   def on_text_command(self, view, command_name, args):
     if RemoteCppListFilesCommand.owns_view(view) and \
         command_name == 'insert' and args['characters'] == '\n':
       path = get_sel_line(view)
+      log(path)
       if self._is_valid_path(path):
         args = File(cwd=s_cwd(), path=path).to_args()
         return (RemoteCppOpenFileCommand.NAME, args)
-    log('pre: cmd=[{cmd}] args=[{args}]'.format(
-        cmd=command_name, args=str(args)), type='on_text_command')
     return None
 
   def _is_valid_path(self, line):
-    return line != None and not line.strip().startswith('#')
+    if line == None:
+      return False
+    line = line.strip()
+    return len(line) > 0 and not line.startswith('#')
 
 
-class GotoBuildErrorListener(sublime_plugin.EventListener):
+class GotoBuildErrorEventListener(sublime_plugin.EventListener):
   def on_text_command(self, view, command_name, args):
     if RemoteCppBuildCommand.owns_view(view) and \
         command_name == 'insert' and args['characters'] == '\n':
@@ -148,7 +151,7 @@ class GotoBuildErrorListener(sublime_plugin.EventListener):
     return None
 
 
-class GotoGrepMatchListener(sublime_plugin.EventListener):
+class GotoGrepMatchEventListener(sublime_plugin.EventListener):
   def on_text_command(self, view, command_name, args):
     if RemoteCppGotoGrepMatchCommand.is_valid(view) and \
         command_name == 'insert' and args['characters'] == '\n':
@@ -247,9 +250,8 @@ class RemoteCppGrepCommand(sublime_plugin.TextCommand):
     view.settings().set("word_wrap", "false")
     Commands.append_text(
         view,
-        '[{time}] Grepping for [{text}] in [{cwd}]...\n\n'.format(
+        '# Grepping for [{text}] in [{cwd}]...\n\n'.format(
             cwd=s_cwd(),
-            time=time_str(),
             text=text,))
     runnable = lambda: self._run_in_the_background(view, text)
     THREAD_POOL.run(runnable)
@@ -285,7 +287,7 @@ class RemoteCppMoveFileCommand(sublime_plugin.TextCommand):
 
   def _run_in_the_background(self, src_file, dst_file):
     try:
-      ssh_cmd('mv "{src}" "{dst}"'.format(
+      ssh_cmd_async('mv "{src}" "{dst}"'.format(
           src=src_file.remote_path(),
           dst=dst_file.remote_path()))
     except:
@@ -356,7 +358,7 @@ class RemoteCppNewFileCommand(sublime_plugin.TextCommand):
             remote_path=new_path,
             remote_dir=os.path.dirname(new_path),
     )
-    ssh_cmd(cmd)
+    ssh_cmd_async(cmd)
     Commands.open_file(self.view, file.to_args())
 
 
@@ -372,7 +374,7 @@ class RemoteCppBuildCommand(sublime_plugin.TextCommand):
         time=time_str()))
     view.set_read_only(True)
     view.set_scratch(True)
-    status = '[{time}] Building with cmd [{cmd}]...\n\n'.format(
+    status = '# [{time}] Building with cmd [{cmd}]...\n\n'.format(
         time=time_str(),
         cmd=self._build_cmd())
     Commands.append_text(view, status)
@@ -440,7 +442,10 @@ class RemoteCppToggleHeaderImplementationCommand(sublime_plugin.TextCommand):
       def run_in_the_background():
         file_list = RemoteCppListFilesCommand.get_file_list(window)
         if type(file_list) == list:
+          log('Successfully downloaded the file list for toggle.')
           Commands.toggle_header_implementation(view)
+        else:
+          log('Failed to download the file list for toggle.')
       THREAD_POOL.run(run_in_the_background)
       return
     else:
@@ -546,52 +551,73 @@ class RemoteCppOpenFileCommand(sublime_plugin.TextCommand):
       log(msg, type=type(self).__name__)
 
 
+class RemoteCppListFilesInPathCommand(sublime_plugin.TextCommand):
+  NAME = 'remote_cpp_list_files_in_path'
+
+  def is_enabled(self):
+    return is_remote_cpp_file(self.view)
+
+  def is_visible(self):
+    return is_remote_cpp_file(self.view)
+
+  def run(self, edit):
+    file = STATE.file(self.view.id())
+    prefix = os.path.dirname(file.path)
+    self.view.run_command(RemoteCppListFilesCommand.NAME, {'prefix': prefix})
+
+
 class RemoteCppListFilesCommand(sublime_plugin.TextCommand):
   NAME = 'remote_cpp_list_files'
   VIEW_PREFIX = 'ListFiles'
 
-  def run(self, edit):
-    view = sublime.active_window().new_file()
+  def run(self, edit, prefix=''):
+    window = self.view.window()
+    view = window.new_file()
     view.set_name('{prefix} [{time}]'.format(
         prefix=RemoteCppListFilesCommand.VIEW_PREFIX,
         time=time_str()))
     view.set_read_only(True)
     view.set_scratch(True)
     view.settings().set("word_wrap", "false")
-    THREAD_POOL.run(lambda: self._run_in_the_background(view))
+    THREAD_POOL.run(lambda: self._get_file_list(window, view, prefix))
 
   @staticmethod
-  def _run_in_the_background(view):
-    window = view.window()
-    try:
-      start_secs = time.time()
-      file_list = RemoteCppListFilesCommand.get_file_list(window)
-      text = '\n'.join(file_list)
-      end_secs = time.time()
-      delta_millis = int((end_secs - start_secs) * 1000)
-      preamble = FILE_LIST_PREAMBLE.format(
-        cwd=s_cwd(),
-        millis=delta_millis)
-      text = '{preamble}\n\n{files}'.format(
-          preamble=preamble,
-          files=text.lstrip())
-    except Exception as e:
-      log_exception('Error listing files')
-      text = 'Error listing files: [{exception}].'.format(exception=e)
-    Commands.append_text(view, text)
+  def _get_file_list(window, view, prefix):
+    capture_listener = CaptureCmdListener()
+    if view == None:
+      listener = capture_listener
+    else:
+      if len(prefix) == 0:
+        prefix_text = ''
+      else:
+        prefix_text = ' in path [{prefix}]'.format(prefix=prefix)
+      title = '# Listing files for CWD=[{cwd}]{prefix}...\n\n'.format(
+          cwd=s_cwd(),
+          prefix=prefix_text)
+      Commands.append_text(view, title)
+      append_listener = AppendToViewListener(view)
+    cmd_template = 'cd {cwd}; ' + s_find_cmd()
+    cmd_str = cmd_template.format(cwd=s_cwd())
+    listener = ListFilesListener(view=view, prefix=prefix)
+    ssh_cmd_async(cmd_str, listener)
+    file_list = RemoteCppListFilesCommand.sanitise_file_list(listener.out)
+    STATE.set_list(window.id(), file_list)
+    return file_list
 
   @staticmethod
   def get_file_list(window):
-    """ Returns a fresh file list """
-    # TODO(ruibm): Check if this works with find in BSD and Linux.
-    cmd_template = 'cd {cwd}; ' + s_find_cmd()
-    cmd_str = cmd_template.format(cwd=s_cwd())
-    files = run_cmd((
-        s_ssh(), '-p {0}'.format(s_ssh_port()), 'localhost',
-        cmd_str))
-    files = sorted(files.strip().split('\n'), key=lambda s: s.lower())
-    STATE.set_list(window.id(), files)
-    return files
+    return RemoteCppListFilesCommand._get_file_list(window, None, '')
+
+  @staticmethod
+  def sanitise_file_list(file_list):
+    new_list = []
+    for path in file_list:
+      path = sanitise_path(path)
+      if len(path) == 0:
+        continue
+      new_list.append(path)
+    new_list = sorted(new_list, key=lambda s: s.lower())
+    return new_list
 
   @staticmethod
   def owns_view(view):
@@ -625,6 +651,32 @@ class CmdListener(object):
     log('Exit code: {0}'.format(exit_code))
 
 
+class ListFilesListener(CmdListener):
+  def __init__(self, view=None, prefix=''):
+    self.out = []
+    self.prefix = prefix
+    if view == None:
+      self.listener = None
+    else:
+      self.listener = AppendToViewListener(view)
+
+  def on_stdout(self, line):
+    path = sanitise_path(line)
+    if len(path) == 0 or not path.startswith(self.prefix):
+      return
+    self.out.append(path)
+    if None != self.listener:
+      self.listener.on_stdout(path + '\n')
+
+  def on_stderr(self, line):
+    if None != self.listener:
+      self.listener.on_stderr(line)
+
+  def on_exit(self, exit_code):
+    if None != self.listener:
+      self.listener.on_exit(exit_code)
+
+
 class AppendToViewListener(CmdListener):
   def __init__(self, view):
     self._view = view
@@ -638,16 +690,14 @@ class AppendToViewListener(CmdListener):
 
   def on_exit(self, exit_code):
     if exit_code == 0:
-      line = ('\n\n[{time}] Command finished successfully'
+      line = ('\n# Command finished successfully'
           ' in {millis} millis.\n').format(
-          time=time_str(),
           millis=self._delta_millis(),
       )
     else:
-      line = ('\n\n[{time}] Command failed with exit code [{code}] '
+      line = ('\n\n# Command failed with exit code [{code}] '
           'in {millis} millis.\n').format(
           code=exit_code,
-          time=time_str(),
           millis=self._delta_millis(),
       )
     Commands.append_text(self._view, line)
@@ -666,27 +716,28 @@ class CaptureCmdListener(CmdListener):
     self._out.append(line)
 
   def on_stderr(self, line):
+    assert not '\n' in line
     self._err.append(line)
 
   def on_exit(self, exit_code):
     self._exit_code = exit_code
 
-  def stdout(self):
-    return ''.join(self._out)
+  def out(self):
+    return self._out
 
-  def stderr(self):
-    return ''.join(self._err)
+  def err(self):
+    return self._err
 
   def exit_code(self):
-    return self._exit_code
+    return int(self._exit_code)
 
 
 class File(object):
   PLUGIN_DIR = 'RemoteCpp'
 
   def __init__(self, cwd, path, row=0, col=0):
-    self.cwd = cwd
-    self.path = path
+    self.cwd = sanitise_path(cwd)
+    self.path = sanitise_path(path)
     self.col = col
     self.row = row
 
@@ -802,7 +853,7 @@ class ProgressAnimation(object):
 
 
 class PluginState(object):
-  STATE_FILE = 'RemoteCpp.PluginState.json'
+  STATE_FILE = 'RemoteCpp.PluginState2.json.gzip'
 
   # List of open remotes files => map<view_id, File.to_args()>
   FILES = 'remote_files'
@@ -855,9 +906,9 @@ class PluginState(object):
     if not os.path.isfile(path):
       return
     log('Reading PluginState from [{0}]...'.format(path))
-    with open(path, 'r') as fp:
+    with gzip.open(path, 'rt') as fp:
       self.state = json.load(fp)
-    # self.gc()
+    self.gc()
     log('Reloaded successfully the PluginState.')
 
   def save(self):
@@ -867,7 +918,7 @@ class PluginState(object):
     dir = os.path.dirname(path)
     if not os.path.isdir(dir):
       os.makedirs(dir)
-    with open(path, 'w') as fp:
+    with gzip.open(path, 'wt') as fp:
       fp.write(raw)
     log('Successully wrote {0} bytes of PluginState.'.format(len(raw)))
 
@@ -883,6 +934,12 @@ class PluginState(object):
 ##############################################################
 # RemoteCpp Functions
 ##############################################################
+
+def sanitise_path(path):
+  path = path.strip()
+  if path.startswith('./'):
+    path = path[2:]
+  return path
 
 def get_sel_line(view):
   all_regs = view.sel()
@@ -906,7 +963,7 @@ def is_remote_cpp_file(view):
 
 def download_file(file):
   log('Downloading the file [{file}]...'.format(file=file.remote_path()))
-  run_cmd((
+  run_cmd_async((
       'scp',
       '-P', str(s_ssh_port()),
       'localhost:{path}'.format(path=file.remote_path()),
@@ -917,19 +974,6 @@ def download_file(file):
 def create_cmd_ssh_args(cmd_str):
   args = [ s_ssh(), '-p {0}'.format(s_ssh_port()), 'localhost', cmd_str ]
   return args
-
-def ssh_cmd(cmd_str):
-  args = create_cmd_ssh_args(cmd_str)
-  return run_cmd(args)
-
-def run_cmd(cmd_list):
-  listener = CaptureCmdListener()
-  run_cmd_async(cmd_list, listener)
-  if listener.exit_code() != 0:
-    raise Exception('Problems running cmd [{cmd}]'.format(
-        cmd=' '.join(cmd_list)
-    ))
-  return listener.stdout()
 
 def ssh_cmd_async(cmd_str, listener=CmdListener()):
   args = create_cmd_ssh_args(cmd_str)
@@ -945,8 +989,11 @@ def run_cmd_async(cmd_list, listener=CmdListener()):
   stderr = proc.stderr
   def read_fd(read_function, on_text_callback):
     text = read_function().decode('utf-8')
-    on_text_callback(text)
-    return len(text)
+    size = 0
+    for line in text.splitlines(keepends=True):
+      on_text_callback(line)
+      size += len(line)
+    return size
   while True:
     ret = select.select([ stdout, stderr ], [], [])
     for fd in ret[0]:

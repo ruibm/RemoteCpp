@@ -27,8 +27,9 @@ X Rename/move remote file.
 X Implement grep'ing through the files for symbols.
 X Jump into line in the file where the grep'ed symbol was.
 X Refresh all files should work always.
+X List files in current file's directory.
+X GZip the Plugin's state file.
 
-- List files in current file's directory.
 - Implement fast file open (with selection box).
 - Index properly the possible ToggleFiles at ListFiles time.
 - Use the file index to also follow includes.
@@ -37,7 +38,6 @@ X Refresh all files should work always.
 - Delete remote file.
 - Index in a dict() the lookups for the toggle files.
 - Command to refresh current open file.
-- Zip the Plugin's state file.
 - When a file is renamed update directly the file list to match.
 - Fix the internal state so the file list is indexed to the 'cwd'
 - OnRefresh, if the RemoteFile is different from the local one notify the user and ask them if they want to proceed.
