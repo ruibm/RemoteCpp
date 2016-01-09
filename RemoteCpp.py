@@ -53,8 +53,11 @@ def s_find_cmd():
 def s_grep_cmd():
   return _get_or_default('remote_cpp_grep_cmd', 'grep  -R -n \'{pattern}\' .')
 
-def s_single_file_list():
-  return _get_or_default('remote_cpp_single_file_list', True)
+def s_single_file_list_view():
+  return _get_or_default('remote_cpp_single_file_list_view', True)
+
+def s_single_build_view():
+  return _get_or_default('remote_cpp_single_build_view', True)
 
 
 ##############################################################
@@ -149,8 +152,8 @@ class AppendToViewListener(CmdListener):
   def on_exit(self, exit_code):
     self._try_flush_buffer(force=True)
     if exit_code == 0:
-      line = ('\n# [{time}] Command finished successfully.'
-          ' in {millis} millis.\n').format(
+      line = ('\n# [{time}] Command finished successfully '
+          'in {millis} millis.\n').format(
           millis=delta_millis(self._start_secs),
           time=time_str(),
       )
@@ -860,21 +863,32 @@ class RemoteCppNewFileCommand(sublime_plugin.TextCommand):
 
 class RemoteCppBuildCommand(sublime_plugin.TextCommand):
   NAME = 'remote_cpp_build'
-  VIEW_PREFIX = 'Build'
+  VIEW_NAME = 'Build'
 
   def run(self, edit):
-    view = self.view.window().new_file()
+    view = self._find_single_view()
+    if view == None:
+      view = self.view.window().new_file()
+    self.view.window().focus_view(view)
     view.settings().set("word_wrap", "false")
-    view.set_name('{prefix} [{time}]'.format(
-        prefix=RemoteCppBuildCommand.VIEW_PREFIX,
+    view.set_name('{prefix}'.format(
+        prefix=RemoteCppBuildCommand.VIEW_NAME,
         time=time_str()))
     view.set_read_only(True)
     view.set_scratch(True)
     status = '# [{time}] Building with cmd [{cmd}]...\n\n'.format(
         time=time_str(),
         cmd=self._build_cmd())
-    Commands.append_text(view, status)
+    Commands.append_text(view, status, clean_first=True)
     THREAD_POOL.run(lambda : self._run_in_the_background(view))
+
+  def _find_single_view(self):
+    if not s_single_build_view():
+      return None
+    for view in self.view.window().views():
+      if self.owns_view(view):
+        return view
+    return None
 
   def _build_cmd(self):
     cwd = s_cwd()
@@ -890,7 +904,7 @@ class RemoteCppBuildCommand(sublime_plugin.TextCommand):
 
   @staticmethod
   def owns_view(view):
-    return view.name().startswith(RemoteCppBuildCommand.VIEW_PREFIX)
+    return view.name() == RemoteCppBuildCommand.VIEW_NAME
 
 
 class RemoteCppGotoIncludeCommand(sublime_plugin.TextCommand):
@@ -1074,15 +1088,14 @@ class RemoteCppListFilesCommand(sublime_plugin.TextCommand):
   # 'prefix' corresponds to the 'path_prefix'.
   def run(self, edit, prefix=''):
     window = self.view.window()
-    if s_single_file_list():
-      view = self._find_file_list(prefix)
+    view = self._find_single_file_list_view(prefix)
     if view == None:
       view = window.new_file()
     window.focus_view(view)
     view.set_name(self._get_title(prefix))
     view.set_read_only(True)
     view.set_scratch(True)
-    view.settings().set("word_wrap", "false")
+    view.settings().set("word_wrap", "False")
     THREAD_POOL.run(lambda: self._get_file_list(window, view, prefix))
 
   def _get_title(self, prefix):
@@ -1094,7 +1107,9 @@ class RemoteCppListFilesCommand(sublime_plugin.TextCommand):
         path_prefix=prefix,
       )
 
-  def _find_file_list(self, prefix):
+  def _find_single_file_list_view(self, prefix):
+    if s_single_file_list_view():
+      return None
     title = self._get_title(prefix)
     for view in self.view.window().views():
       if view.name() == title:
