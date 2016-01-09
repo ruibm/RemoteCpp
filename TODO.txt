@@ -28,13 +28,15 @@ X Implement grep'ing through the files for symbols.
 X Jump into line in the file where the grep'ed symbol was.
 X Refresh all files should work always.
 X List files in current file's directory.
-X GZip the Plugin's state file.
+X BZip2 the Plugin's state file.
 X Fix the bug where the PluginState is completely GC() at boot time.
 X Change completely the state so it relies on the view.file_name().
 X AppendLineListener needs to be buffered otherwise it kills Sublime.
+X Delete remote file.
 
-- Delete remote file.
 - Implement singleton ListFiles.
+- Implement singleton Build.
+- Implement singleton Grep.
 
 - Implement fast file open (with selection box).
 - Index properly the possible ToggleFiles at ListFiles time.

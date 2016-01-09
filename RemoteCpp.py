@@ -25,8 +25,6 @@ from subprocess import PIPE
 # RemoteCpp Settings
 ##############################################################
 
-# TODO(ruibm): Maybe I should pass in a window/view argument here. This is a
-# bit dangerous.
 def _get_or_default(setting, default, view=None):
   if view == None:
     view = sublime.active_window().active_view()
@@ -55,6 +53,10 @@ def s_find_cmd():
 def s_grep_cmd():
   return _get_or_default('remote_cpp_grep_cmd', 'grep  -R -n \'{pattern}\' .')
 
+def s_single_file_list():
+  return _get_or_default('remote_cpp_single_file_list', True)
+
+
 ##############################################################
 # Constants
 ##############################################################
@@ -78,7 +80,6 @@ FILE_LIST_PREAMBLE = '''
 ##############################################################
 # RemoteCpp Classes
 ##############################################################
-
 
 class CmdListener(object):
   def on_stdout(self, line):
@@ -148,15 +149,17 @@ class AppendToViewListener(CmdListener):
   def on_exit(self, exit_code):
     self._try_flush_buffer(force=True)
     if exit_code == 0:
-      line = ('\n# Command finished successfully'
+      line = ('\n# [{time}] Command finished successfully.'
           ' in {millis} millis.\n').format(
           millis=delta_millis(self._start_secs),
+          time=time_str(),
       )
     else:
-      line = ('\n\n# Command failed with exit code [{code}] '
+      line = ('\n\n# [{time}]Command failed with exit code [{code}] '
           'in {millis} millis.\n').format(
           code=exit_code,
           millis=delta_millis(self._start_secs),
+          time=time_str(),
       )
     Commands.append_text(self._view, line)
 
@@ -487,7 +490,7 @@ def run_cmd(cmd_list, listener=CmdListener()):
       return
 
 def time_str():
-  return datetime.datetime.now().strftime("%Y-%m-%d_%Hh%Mm%Ss")
+  return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 def log(msg, type=''):
   if type in LOG_TYPES:
@@ -635,9 +638,12 @@ class Commands(object):
     raise Exception('Not to be instantiated.')
 
   @staticmethod
-  def append_text(view, text):
+  def append_text(view, text, clean_first=False):
     ''' Appends the text and moves scroll to the bottom '''
-    view.run_command(RemoteCppAppendTextCommand.NAME, { 'text': text })
+    view.run_command(RemoteCppAppendTextCommand.NAME, {
+        'text': text,
+        'clean_first': clean_first,
+    })
 
   @staticmethod
   def open_file(view, args_to_create_file):
@@ -1065,16 +1071,35 @@ class RemoteCppListFilesCommand(sublime_plugin.TextCommand):
   NAME = 'remote_cpp_list_files'
   VIEW_PREFIX = 'ListFiles'
 
+  # 'prefix' corresponds to the 'path_prefix'.
   def run(self, edit, prefix=''):
     window = self.view.window()
-    view = window.new_file()
-    view.set_name('{prefix} [{time}]'.format(
-        prefix=RemoteCppListFilesCommand.VIEW_PREFIX,
-        time=time_str()))
+    if s_single_file_list():
+      view = self._find_file_list(prefix)
+    if view == None:
+      view = window.new_file()
+    window.focus_view(view)
+    view.set_name(self._get_title(prefix))
     view.set_read_only(True)
     view.set_scratch(True)
     view.settings().set("word_wrap", "false")
     THREAD_POOL.run(lambda: self._get_file_list(window, view, prefix))
+
+  def _get_title(self, prefix):
+    if len(prefix) == 0:
+      return self.VIEW_PREFIX
+    else:
+      return '{view_prefix} - {path_prefix}'.format(
+        view_prefix=self.VIEW_PREFIX,
+        path_prefix=prefix,
+      )
+
+  def _find_file_list(self, prefix):
+    title = self._get_title(prefix)
+    for view in self.view.window().views():
+      if view.name() == title:
+        return view
+    return None
 
   @staticmethod
   def _get_file_list(window, view, prefix):
@@ -1086,10 +1111,11 @@ class RemoteCppListFilesCommand(sublime_plugin.TextCommand):
         prefix_text = ''
       else:
         prefix_text = ' in path [{prefix}]'.format(prefix=prefix)
-      title = '# Listing files for CWD=[{cwd}]{prefix}...\n\n'.format(
+      title = '# [{time}] Listing files for CWD=[{cwd}]{prefix}...\n\n'.format(
           cwd=s_cwd(),
-          prefix=prefix_text)
-      Commands.append_text(view, title)
+          prefix=prefix_text,
+          time=time_str())
+      Commands.append_text(view, title, clean_first=True)
       append_listener = AppendToViewListener(view)
     cmd_template = 'cd {cwd}; ' + s_find_cmd()
     cmd_str = cmd_template.format(cwd=s_cwd())
@@ -1110,9 +1136,11 @@ class RemoteCppListFilesCommand(sublime_plugin.TextCommand):
 class RemoteCppAppendTextCommand(sublime_plugin.TextCommand):
   NAME = 'remote_cpp_append_text'
 
-  def run(self, edit, text='NO_TEXT_PROVIDED'):
+  def run(self, edit, text='NO_TEXT_PROVIDED', clean_first=False):
     view = self.view
     view.set_read_only(False)
+    if clean_first and view.size() > 0:
+      view.erase(edit, sublime.Region(0, view.size()))
     view.insert(edit, view.size(), text)
     view.set_read_only(True)
     view.show(view.size() + 1)
