@@ -3,6 +3,7 @@
     { "keys": ["alt+super+o"], "command": "remote_cpp_open_file" },
     { "keys": ["alt+super+n"], "command": "remote_cpp_new_file" },
     { "keys": ["alt+super+m"], "command": "remote_cpp_move_file" },
+    { "keys": ["ctrl+alt+super+d"], "command": "remote_cpp_delete_file" },
     { "keys": ["ctrl+alt+super+g"], "command": "remote_cpp_grep" },
     { "keys": ["ctrl+alt+super+l"], "command": "remote_cpp_list_files_in_path" },
     { "keys": ["alt+super+l"], "command": "remote_cpp_list_files" },

@@ -116,7 +116,6 @@ class ListFilesListener(CmdListener):
       for path in self.file_list:
         if path.startswith(self.prefix):
           filtered_files.append(path)
-      log(str(filtered_files))
       self.listener.on_stdout('\n'.join(filtered_files) + '\n')
       self.listener.on_exit(exit_code)
 
@@ -439,7 +438,7 @@ def is_remote_cpp_file(view):
 
 def download_file(file):
   log('Downloading the file [{file}]...'.format(file=file.remote_path()))
-  run_cmd_async((
+  run_cmd((
       'scp',
       '-P', str(s_ssh_port()),
       'localhost:{path}'.format(path=file.remote_path()),
@@ -451,11 +450,11 @@ def create_cmd_ssh_args(cmd_str):
   args = [ s_ssh(), '-p {0}'.format(s_ssh_port()), 'localhost', cmd_str ]
   return args
 
-def ssh_cmd_async(cmd_str, listener=CmdListener()):
+def ssh_cmd(cmd_str, listener=CmdListener()):
   args = create_cmd_ssh_args(cmd_str)
-  run_cmd_async(args, listener)
+  run_cmd(args, listener)
 
-def run_cmd_async(cmd_list, listener=CmdListener()):
+def run_cmd(cmd_list, listener=CmdListener()):
   proc = subprocess.Popen(cmd_list,
       stdin=None,
       stdout=subprocess.PIPE,
@@ -584,7 +583,7 @@ class SaveFileEventListener(sublime_plugin.EventListener):
 
   def _run_in_the_background(self, file):
     log('Saving file [{0}]...'.format(file.remote_path()))
-    run_cmd_async((
+    run_cmd((
         s_scp(),
         '-P', str(s_ssh_port()),
         '{path}'.format(path=file.local_path()),
@@ -657,6 +656,24 @@ class Commands(object):
   def goto_grep_match(view):
     view.run_command(RemoteCppGotoGrepMatchCommand.NAME)
 
+
+class RemoteCppDeleteFileCommand(sublime_plugin.TextCommand):
+  NAME = 'remote_cpp_delete_file'
+
+  def is_enabled(self):
+    return None != STATE.file(self.view.file_name())
+
+  def is_visible(self):
+    return self.is_enabled()
+
+  def run(self, edit):
+    file = STATE.file(self.view.file_name())
+    title = 'Delete file:\n\n{0}'.format(file.remote_path())
+    if sublime.ok_cancel_dialog(title, 'Delete'):
+      log("Deleting the file...")
+      cmd_str = 'rm -f {remote_path}'.format(remote_path=file.remote_path())
+      ssh_cmd(cmd_str)
+      self.view.close()
 
 class RemoteCppGcCommand(sublime_plugin.TextCommand):
   def run(self, edit):
@@ -736,7 +753,7 @@ class RemoteCppGrepCommand(sublime_plugin.TextCommand):
         pattern=text,)
     log('Running cmd [{cmd}]...'.format(cmd=arg_str))
     listener = AppendToViewListener(view)
-    ssh_cmd_async(arg_str, listener)
+    ssh_cmd(arg_str, listener)
 
 
 class RemoteCppMoveFileCommand(sublime_plugin.TextCommand):
@@ -760,7 +777,7 @@ class RemoteCppMoveFileCommand(sublime_plugin.TextCommand):
 
   def _run_in_the_background(self, src_file, dst_file):
     try:
-      ssh_cmd_async('mv "{src}" "{dst}"'.format(
+      ssh_cmd('mv "{src}" "{dst}"'.format(
           src=src_file.remote_path(),
           dst=dst_file.remote_path()))
     except:
@@ -831,7 +848,7 @@ class RemoteCppNewFileCommand(sublime_plugin.TextCommand):
             remote_path=new_path,
             remote_dir=os.path.dirname(new_path),
     )
-    ssh_cmd_async(cmd)
+    ssh_cmd(cmd)
     Commands.open_file(self.view, file.to_args())
 
 
@@ -863,7 +880,7 @@ class RemoteCppBuildCommand(sublime_plugin.TextCommand):
 
   def _run_in_the_background(self, view):
     listener = AppendToViewListener(view)
-    ssh_cmd_async(self._build_cmd(), listener)
+    ssh_cmd(self._build_cmd(), listener)
 
   @staticmethod
   def owns_view(view):
@@ -1077,7 +1094,7 @@ class RemoteCppListFilesCommand(sublime_plugin.TextCommand):
     cmd_template = 'cd {cwd}; ' + s_find_cmd()
     cmd_str = cmd_template.format(cwd=s_cwd())
     listener = ListFilesListener(view=view, prefix=prefix)
-    ssh_cmd_async(cmd_str, listener)
+    ssh_cmd(cmd_str, listener)
     STATE.set_list(s_cwd(), listener.file_list)
     return listener.file_list
 
