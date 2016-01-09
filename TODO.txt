@@ -29,13 +29,18 @@ X Jump into line in the file where the grep'ed symbol was.
 X Refresh all files should work always.
 X List files in current file's directory.
 X GZip the Plugin's state file.
+X Fix the bug where the PluginState is completely GC() at boot time.
+X Change completely the state so it relies on the view.file_name().
+X AppendLineListener needs to be buffered otherwise it kills Sublime.
+
+- Delete remote file.
+- Implement singleton ListFiles.
 
 - Implement fast file open (with selection box).
 - Index properly the possible ToggleFiles at ListFiles time.
 - Use the file index to also follow includes.
 - When displaying files from the index, display the quick option box when there are multiple options.
 - Improve error handling to always notify the user when the remote connection is broken.
-- Delete remote file.
 - Index in a dict() the lookups for the toggle files.
 - Command to refresh current open file.
 - When a file is renamed update directly the file list to match.

@@ -1,4 +1,5 @@
 [
+    { "keys": ["alt+super+c"], "command": "remote_cpp_gc" },
     { "keys": ["alt+super+o"], "command": "remote_cpp_open_file" },
     { "keys": ["alt+super+n"], "command": "remote_cpp_new_file" },
     { "keys": ["alt+super+m"], "command": "remote_cpp_move_file" },
