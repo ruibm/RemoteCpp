@@ -39,3 +39,8 @@ https://www.debian.org/devel/passwordlessssh
 ## Contacts
 1. Via BitBucket: https://bitbucket.org/ruibm/remotecpp
 2. Via Email: ruibm@ruibm.com
+
+## License
+
+RemoteCpp is release under the license: Apache License Version 2.0, January 2004
+For full details please read: https://bitbucket.org/ruibm/remotecpp/src/master/LICENSE
