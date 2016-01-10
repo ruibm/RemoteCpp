@@ -1,6 +1,8 @@
 # RemoteCpp Plugin
 
-The simple goal of this plugin is to make it possible/acceptable/pleasant to develop C++ remotely via SSH. (potentially in a different OS)
+The simple goal of this plugin is to make it pleasant/acceptable to develop C++ remotely via SSH.
+
+## How To Setup
 
 ## Features
 - Toggle between header and implementation files.

@@ -30,14 +30,17 @@ def _get_or_default(setting, default, view=None):
     view = sublime.active_window().active_view()
   return view.settings().get(setting, default)
 
+def s_cwd(view=None):
+  return _get_or_default('remote_cpp_cwd', 'cwd', view)
+
 def s_ssh():
   return _get_or_default('remote_cpp_ssh', 'ssh')
 
+def s_ssh_hostname():
+  return _get_or_default('remote_cpp_ssh_hostname', 'ssh')
+
 def s_ssh_port():
   return int(_get_or_default('remote_cpp_ssh_port', 8888))
-
-def s_cwd(view=None):
-  return _get_or_default('remote_cpp_cwd', 'cwd', view)
 
 def s_scp():
   return _get_or_default('remote_cpp_scp', 'scp')
@@ -441,13 +444,15 @@ def download_file(file):
   run_cmd((
       'scp',
       '-P', str(s_ssh_port()),
-      'localhost:{path}'.format(path=file.remote_path()),
+      '{hostname}:{path}'.format(
+          path=file.remote_path(),
+          hostname=s_ssh_hostname()),
       '{path}'.format(path=file.local_path())
   ))
   log('Done downloading the file into [{file}].'.format(file=file.local_path()))
 
 def create_cmd_ssh_args(cmd_str):
-  args = [ s_ssh(), '-p {0}'.format(s_ssh_port()), 'localhost', cmd_str ]
+  args = [ s_ssh(), '-p {0}'.format(s_ssh_port()), s_ssh_hostname(), cmd_str ]
   return args
 
 def ssh_cmd(cmd_str, listener=CmdListener()):
@@ -587,7 +592,9 @@ class SaveFileEventListener(sublime_plugin.EventListener):
         s_scp(),
         '-P', str(s_ssh_port()),
         '{path}'.format(path=file.local_path()),
-        'localhost:{path}'.format(path=file.remote_path()),
+        '{hostname}:{path}'.format(
+            path=file.remote_path(),
+            hostname=s_ssh_hostname()),
     ))
     log('Successsfully saved file [{0}].'.format(file.local_path()))
 

@@ -1,8 +1,12 @@
 {
   "remote_cpp_cwd": "~",
   "remote_cpp_ssh": "ssh",
+  "remote_cpp_ssh_hostname": "localhost",
   "remote_cpp_ssh_port": "8888",
   "remote_cpp_scp": "scp",
   "remote_cpp_build_cmd": "buck build",
+  "remote_cpp_find_cmd": "find . -maxdepth 5 -not -path '*/\\.*' -type f -print -not -path '*buck-cache*' -not -path '*buck-out*'",
   "remote_cpp_grep_cmd": "grep  -R -n '{pattern}' .",
+  "remote_cpp_single_build_view": true,
+  "remote_cpp_single_file_list_view": true,
 }
