@@ -333,13 +333,11 @@ class PluginState(object):
       self.state[self.LISTS] = {}
     if not self.README in self.state:
       self.state[self.README] = False
-    log('=> ' + str(self.state))
 
   def set_readme(self):
     self.state[self.README] = True
 
   def readme(self):
-    log('=> ' + str(self.state))
     return self.state[self.README]
 
   def file(self, local_path):
@@ -696,9 +694,21 @@ class RemoteCppRefreshViewCommand(sublime_plugin.TextCommand):
   def run(self, edit):
     file = STATE.file(self.view.file_name())
     if file != None:
-      log('Refresh remote file!!')
+      self._refresh_file(file)
     elif RemoteCppListFilesCommand.owns_view(self.view):
-      log('Refresh ListView!!!')
+      self._refresh_file_list()
+
+  def _refresh_file(self, file):
+    log('Refresh remote file!!')
+    if os.path.isfile(file.local_path()):
+      os.remove(file.local_path())
+    Commands.open_file(self.view, file.to_args())
+
+  def _refresh_file_list(self):
+    log('Refresh ListView!!!')
+    args = RemoteCppListFilesCommand.to_args(self.view)
+    args['force_single_view'] = True
+    self.view.run_command(RemoteCppListFilesCommand.NAME, args)
 
 
 class RemoteCppOpenReadmeCommand(sublime_plugin.WindowCommand):
@@ -1138,9 +1148,11 @@ class RemoteCppListFilesCommand(sublime_plugin.TextCommand):
   VIEW_PREFIX = 'ListFiles'
 
   # 'prefix' corresponds to the 'path_prefix'.
-  def run(self, edit, prefix=''):
+  def run(self, edit, prefix='', force_single_view=False):
     window = self.view.window()
-    view = self._find_single_file_list_view(prefix)
+    view = None
+    if force_single_view or s_single_file_list_view():
+      view = self._find_single_file_list_view(prefix)
     if view == None:
       view = window.new_file()
     window.focus_view(view)
@@ -1160,8 +1172,6 @@ class RemoteCppListFilesCommand(sublime_plugin.TextCommand):
       )
 
   def _find_single_file_list_view(self, prefix):
-    if not s_single_file_list_view():
-      return None
     title = self._get_title(prefix)
     for view in self.view.window().views():
       if view.name() == title:
@@ -1198,6 +1208,16 @@ class RemoteCppListFilesCommand(sublime_plugin.TextCommand):
   @staticmethod
   def owns_view(view):
     return view.name().startswith(RemoteCppListFilesCommand.VIEW_PREFIX)
+
+  @staticmethod
+  def to_args(view):
+    parts = [s.strip() for s in view.name().split('-')]
+    if len(parts) == 1:
+      return {}
+    elif len(parts) == 2:
+      return { prefix: parts[1] }
+    else:
+      raise Exception('Not a ListFiles window {0}.'.format(view.name()))
 
 
 class RemoteCppAppendTextCommand(sublime_plugin.TextCommand):
