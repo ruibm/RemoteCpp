@@ -600,10 +600,10 @@ class SaveFileEventListener(sublime_plugin.EventListener):
 
 class ListFilesEventListener(sublime_plugin.EventListener):
   def on_text_command(self, view, command_name, args):
+    # log('cmd={cmd} args={args}'.format(cmd=command_name, args=args))
     if RemoteCppListFilesCommand.owns_view(view) and \
         command_name == 'insert' and args['characters'] == '\n':
       path = get_sel_line(view)
-      log(path)
       if self._is_valid_path(path):
         args = File(cwd=s_cwd(), path=path).to_args()
         return (RemoteCppOpenFileCommand.NAME, args)
@@ -1108,7 +1108,7 @@ class RemoteCppListFilesCommand(sublime_plugin.TextCommand):
       )
 
   def _find_single_file_list_view(self, prefix):
-    if s_single_file_list_view():
+    if not s_single_file_list_view():
       return None
     title = self._get_title(prefix)
     for view in self.view.window().views():
