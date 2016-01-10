@@ -261,7 +261,7 @@ class ThreadPool(object):
                 exception=e))
       with self._lock:
         self._tasks_running -= 1
-    log('tasks running = ' + str(self._tasks_running))
+    self.log('tasks running = ' + str(self._tasks_running))
     sublime.set_timeout_async(callback_wrapper, 0)
 
   def tasks_running(self):
@@ -272,6 +272,9 @@ class ThreadPool(object):
     if self._progress_animation:
       self._progress_animation.close()
       self._progress_animation = None
+
+  def log(self, msg):
+    log(msg, type=type(self).__name__)
 
 
 class ProgressAnimation(object):
@@ -359,7 +362,7 @@ class PluginState(object):
     self.state[self.LISTS][cwd] = file_list
 
   def gc(self):
-    log('RemoteCpp is GC\'ing the PluginState...')
+    self.log('RemoteCpp is GC\'ing the PluginState...')
     start_secs = time.time()
     all_local_paths = set()
     cwds = all_cwds()
@@ -368,20 +371,20 @@ class PluginState(object):
         log('Deleting file list for cwd [{0}].'.format(cwd))
         del self.state[self.LISTS][cwd]
     millis = delta_millis(start_secs)
-    log('RemoteCpp finished GC in {millis} millis.'.format(millis=millis))
+    self.log('RemoteCpp finished GC in {millis} millis.'.format(millis=millis))
 
   def load(self):
     start_secs = time.time()
     path = PluginState._path()
     if not os.path.isfile(path):
       return
-    log('Reading RemoteCpp PluginState from [{0}]...'.format(path))
+    self.log('Reading RemoteCpp PluginState from [{0}]...'.format(path))
     with bz2.open(path, 'rt') as fp:
       new_state = json.load(fp)
       self.state.update(new_state)
     size_bytes = os.path.getsize(path)
     millis = delta_millis(start_secs)
-    log('Successfully loaded {bytes} bytes in {millis} millis.'.format(
+    self.log('Successfully loaded {bytes} bytes in {millis} millis.'.format(
         bytes=size_bytes,
         millis=millis))
 
@@ -389,7 +392,7 @@ class PluginState(object):
     start_secs = time.time()
     raw = json.dumps(self.state, indent=2)
     path = self._path()
-    log('Writing RemoteCpp PluginState to [{0}]...'.format(path))
+    self.log('Writing RemoteCpp PluginState to [{0}]...'.format(path))
     dir = os.path.dirname(path)
     if not os.path.isdir(dir):
       os.makedirs(dir)
@@ -397,9 +400,13 @@ class PluginState(object):
       fp.write(raw)
     millis = delta_millis(start_secs)
     size_bytes = os.path.getsize(path)
-    log('Successully wrote {bytes} bytes in {millis}.'.format(
+    self.log('Successully wrote {bytes} bytes in {millis}.'.format(
         bytes=size_bytes,
         millis=millis))
+
+  @staticmethod
+  def log(msg):
+    log(msg, type=PluginState.__name__)
 
   @staticmethod
   def _path():
@@ -699,16 +706,19 @@ class RemoteCppRefreshViewCommand(sublime_plugin.TextCommand):
       self._refresh_file_list()
 
   def _refresh_file(self, file):
-    log('Refresh remote file!!')
+    self.log('Refresh remote file!!')
     if os.path.isfile(file.local_path()):
       os.remove(file.local_path())
     Commands.open_file(self.view, file.to_args())
 
   def _refresh_file_list(self):
-    log('Refresh ListView!!!')
+    self.log('Refresh ListView!!!')
     args = RemoteCppListFilesCommand.to_args(self.view)
     args['force_single_view'] = True
     self.view.run_command(RemoteCppListFilesCommand.NAME, args)
+
+  def log(self, msg):
+    log(msg, type=type(self).__name__)
 
 
 class RemoteCppOpenReadmeCommand(sublime_plugin.WindowCommand):
@@ -1215,7 +1225,7 @@ class RemoteCppListFilesCommand(sublime_plugin.TextCommand):
     if len(parts) == 1:
       return {}
     elif len(parts) == 2:
-      return { prefix: parts[1] }
+      return { 'prefix': parts[1] }
     else:
       raise Exception('Not a ListFiles window {0}.'.format(view.name()))
 
