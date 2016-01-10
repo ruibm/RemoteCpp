@@ -1,14 +1,41 @@
 # RemoteCpp Plugin
 
-The simple goal of this plugin is to make it pleasant/acceptable to develop C++ remotely via SSH.
+The simple goal of this Sublime Text Editor plugin is to make it pleasant/acceptable to develop C++ remotely via SSH.
 
-## How To Setup
 
-## Features
-- Toggle between header and implementation files.
-- Follow #include declarations.
-- Show remote file tree as a readonly file and allow clicking to go to file.
-- Show remote file tree under current file as a readonly file and allow clicking to go to file.
-- Allow building remotely and pull output to a readonly file.
-- Allow jumping straight into files in the compiler build errors.
-- Allow recursive grepping of symbols in files outputting to a readonly file and allow clicking to go to file.
+## How Does It Work?
+
+RemoteCpp relies on the ability to communicate with the remote host without having to manually type the password every single time.
+To do so there are at least two options:
+
+1. Configure the remote ssh server to accept you ssh key (by updating the ~/.ssh/auhtorized_keys file). Here's a link on how to achieve this:
+https://www.debian.org/devel/passwordlessssh
+
+2. Create a SSH listen tunnel to the remote server so RemoteCpp always connects to localhost port ["remote_cpp_ssh_port": "8888"]. This way you only have to type your ssh password once. Here's a recommendation of command you can use to connect:
+
+
+## Key Shortcuts/Features
+
+* **Ctrl+Cmd+Alt+L**: List Remote Files.
+* **Cmd+Alt+L**: List Remote Files In Current Open Path.
+* **Cmd+Enter**: Goto #include'd Remote File.
+* **Cmd+Alt+Up**: Toggle Header/Implementation Remote File.
+* **Cmd+Alt+B**: Remote Build.
+* **Cmd+Alt+N**: New Remote File.
+* **Cmd+Alt+O**: Open Remote File.
+* **Cmd+Alt+M**: Move Remote File In Current View.
+* **Cmd+Alt+D**: Delete Remote File In Current View.
+* **Cmd+Alt+R**: Refresh Current View.
+* **Ctrl+Cmd+Alt+R**: Refresh All Views.
+* **Ctrl+Cmd+Alt+G**: Grep All Remote Files.
+
+
+### View Specific Key Shortcuts/Features
+* **Enter** *(In Build View)*: Goto Build Error File Under the Cursor.
+* **Enter** *(In Grep View)*: Goto File Matched By Grep Under the Cursor.
+* **Enter** *(In ListFiles View)*: Open File Under Cursor.
+
+
+## Contacts
+1. Via BitBucket: https://bitbucket.org/ruibm/remotecpp
+2. Via Email: ruibm@ruibm.com
