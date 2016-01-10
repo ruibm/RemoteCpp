@@ -1,0 +1,16 @@
+[
+    { "caption": "RemoteCpp: Garbage Collect Internal State", "command": "remote_cpp_gc" },
+    { "caption": "RemoteCpp: Open File", "command": "remote_cpp_open_file" },
+    { "caption": "RemoteCpp: New File", "command": "remote_cpp_new_file" },
+    { "caption": "RemoteCpp: Move File", "command": "remote_cpp_move_file" },
+    { "caption": "RemoteCpp: Delete File", "command": "remote_cpp_delete_file" },
+    { "caption": "RemoteCpp: List Files", "command": "remote_cpp_list_files" },
+    { "caption": "RemoteCpp: List Files In Current Path", "command": "remote_cpp_list_files_in_path" },
+    { "caption": "RemoteCpp: Grep", "command": "remote_cpp_grep" },
+    { "caption": "RemoteCpp: Refresh View", "command": "remote_cpp_refresh_view" },
+    { "caption": "RemoteCpp: Refresh All Views", "command": "remote_cpp_refresh_all_views" },
+    { "caption": "RemoteCpp: Refresh File Cache", "command": "remote_cpp_refresh_cache" },
+    { "caption": "RemoteCpp: Build", "command": "remote_cpp_build" },
+    { "caption": "RemoteCpp: Goto Include", "command": "remote_cpp_goto_include" },
+    { "caption": "RemoteCpp: Toggle Header/Implementation", "command": "remote_cpp_toggle_header_implementation" },
+]

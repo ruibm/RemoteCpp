@@ -36,10 +36,14 @@ X Delete remote file.
 X Implement singleton ListFiles.
 X Implement singleton Build.
 
+X Document all comments in the settings file so they appear in Cmd+Shift+P.
+- Write a proper README.md file.
+- Make sure RemoteCpp opens the README.md file the first time it's ran.
 - Implement refresh current (for files and file lists).
 - Implement refresh all (for files and file lists).
-- Implement singleton Grep.
 - Implement fast file open (with selection box).
+
+- Implement singleton Grep.
 - Index properly the possible ToggleFiles at ListFiles time.
 - Use the file index to also follow includes.
 - When displaying files from the index, display the quick option box when there are multiple options.
@@ -50,8 +54,8 @@ X Implement singleton Build.
 - Fix the internal state so the file list is indexed to the 'cwd'
 - OnRefresh, if the RemoteFile is different from the local one notify the user and ask them if they want to proceed.
 - Toggling Header/Implementation from 'c' or 'cpp' should go directly to 'h' without prompt.
+- Reduce logging all over the place.
 
-= TheTimes REF 07558622 - Ashley
 
 # Will disconnect after (ServerAliveCountMax * ServerAliveInterval) seconds.
 ssh -L 8888:localhost:22 $DEV -o TCPKeepAlive=yes -o ServerAliveCountMax=1000000 -o ServerAliveInterval=86400 -o ControlPersist=4h -o ControlMaster=yes 'while true; do echo "=> [$(date)] Still Alive!!! :)" ; sleep 5s; done;'

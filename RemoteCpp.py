@@ -660,6 +660,24 @@ class Commands(object):
     view.run_command(RemoteCppGotoGrepMatchCommand.NAME)
 
 
+class RemoteCppRefreshViewCommand(sublime_plugin.TextCommand):
+  NAME = 'remote_cpp_refresh_view'
+
+  def is_enabled(self):
+    return None != STATE.file(self.view.file_name()) or \
+        RemoteCppListFilesCommand.owns_view(self.view)
+
+  def is_visible(self):
+    return self.is_enabled()
+
+  def run(self, edit):
+    file = STATE.file(self.view.file_name())
+    if file != None:
+      log('Refresh remote file!!')
+    elif RemoteCppListFilesCommand.owns_view(self.view):
+      log('Refresh ListView!!!')
+
+
 class RemoteCppDeleteFileCommand(sublime_plugin.TextCommand):
   NAME = 'remote_cpp_delete_file'
 
