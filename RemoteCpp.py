@@ -64,20 +64,14 @@ def s_single_build_view():
 # Constants
 ##############################################################
 
-LS_VIEW_TITLE_PREFIX = 'ListView'
 LOG_TYPES = set(('', 'RemoteCppGotoBuildErrorCommand'))
 CPP_EXTENSIONS = set([
     '.c',
     '.cpp',
-    '.h',
     '.cc',
+    '.h',
+    '.hpp',
 ])
-FILE_LIST_PREAMBLE = '''
-# Press 'Enter' on the selected remote file to open it.
-#
-# CWD={cwd}
-# Took {millis} millis to list all files.
-'''.lstrip()
 
 
 ##############################################################

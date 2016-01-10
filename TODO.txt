@@ -33,11 +33,12 @@ X Fix the bug where the PluginState is completely GC() at boot time.
 X Change completely the state so it relies on the view.file_name().
 X AppendLineListener needs to be buffered otherwise it kills Sublime.
 X Delete remote file.
+X Implement singleton ListFiles.
+X Implement singleton Build.
 
-- Implement singleton ListFiles.
-- Implement singleton Build.
+- Implement refresh current (for files and file lists).
+- Implement refresh all (for files and file lists).
 - Implement singleton Grep.
-
 - Implement fast file open (with selection box).
 - Index properly the possible ToggleFiles at ListFiles time.
 - Use the file index to also follow includes.
@@ -48,6 +49,7 @@ X Delete remote file.
 - When a file is renamed update directly the file list to match.
 - Fix the internal state so the file list is indexed to the 'cwd'
 - OnRefresh, if the RemoteFile is different from the local one notify the user and ask them if they want to proceed.
+- Toggling Header/Implementation from 'c' or 'cpp' should go directly to 'h' without prompt.
 
 = TheTimes REF 07558622 - Ashley
 
