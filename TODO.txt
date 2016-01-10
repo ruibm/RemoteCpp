@@ -35,11 +35,11 @@ X AppendLineListener needs to be buffered otherwise it kills Sublime.
 X Delete remote file.
 X Implement singleton ListFiles.
 X Implement singleton Build.
-
 X Document all comments in the settings file so they appear in Cmd+Shift+P.
 X Write a proper README.md file.
-- Create Command that opens the README.md file.
-- Make sure RemoteCpp opens the README.md file the first time it's ran.
+X Create Command that opens the README.md file.
+X Make sure RemoteCpp opens the README.md file the first time it's ran.
+
 - Implement refresh current (for files and file lists).
 - Implement refresh all (for files and file lists).
 - Implement fast file open (with selection box).

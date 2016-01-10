@@ -37,7 +37,7 @@ def s_ssh():
   return _get_or_default('remote_cpp_ssh', 'ssh')
 
 def s_ssh_hostname():
-  return _get_or_default('remote_cpp_ssh_hostname', 'ssh')
+  return _get_or_default('remote_cpp_ssh_hostname', 'localhost')
 
 def s_ssh_port():
   return int(_get_or_default('remote_cpp_ssh_port', 8888))
@@ -325,11 +325,22 @@ class PluginState(object):
   # old: map<window_id, files_list>
   # new: map<cwd, vector<path>>
   LISTS = 'file_lists'
+  README = 'has_readme_been_shown'
 
   def __init__(self, state=dict()):
     self.state = state
     if not self.LISTS in self.state:
       self.state[self.LISTS] = {}
+    if not self.README in self.state:
+      self.state[self.README] = False
+    log('=> ' + str(self.state))
+
+  def set_readme(self):
+    self.state[self.README] = True
+
+  def readme(self):
+    log('=> ' + str(self.state))
+    return self.state[self.README]
 
   def file(self, local_path):
     if local_path == None:
@@ -342,7 +353,7 @@ class PluginState(object):
     return None
 
   def list(self, cwd):
-    if window_id in self.state[self.LISTS]:
+    if cwd in self.state[self.LISTS]:
       return self.state[self.LISTS][cwd]
     return None
 
@@ -368,7 +379,8 @@ class PluginState(object):
       return
     log('Reading RemoteCpp PluginState from [{0}]...'.format(path))
     with bz2.open(path, 'rt') as fp:
-      self.state = json.load(fp)
+      new_state = json.load(fp)
+      self.state.update(new_state)
     size_bytes = os.path.getsize(path)
     millis = delta_millis(start_secs)
     log('Successfully loaded {bytes} bytes in {millis} millis.'.format(
@@ -548,6 +560,10 @@ def plugin_loaded():
   except:
     log_exception('Critical problem loading the plugin STATE file.')
   sublime.set_timeout_async(STATE.gc, 5000)
+  if not STATE.readme():
+    sublime.active_window().run_command(RemoteCppOpenReadmeCommand.NAME)
+    STATE.set_readme()
+    STATE.save()
   log('RemoteCpp has loaded successfully! :)')
 
 
@@ -683,6 +699,23 @@ class RemoteCppRefreshViewCommand(sublime_plugin.TextCommand):
       log('Refresh remote file!!')
     elif RemoteCppListFilesCommand.owns_view(self.view):
       log('Refresh ListView!!!')
+
+
+class RemoteCppOpenReadmeCommand(sublime_plugin.WindowCommand):
+  NAME = 'remote_cpp_open_readme'
+
+  def is_enabled(self):
+    return os.path.isfile(self.readme_path())
+
+  def is_visible(self):
+    return self.is_enabled()
+
+  def run(self):
+    view = self.window.open_file(self.readme_path())
+    view.set_read_only(True)
+
+  def readme_path(self):
+    return os.path.join(sublime.packages_path(), 'RemoteCpp', 'README.md')
 
 
 class RemoteCppDeleteFileCommand(sublime_plugin.TextCommand):

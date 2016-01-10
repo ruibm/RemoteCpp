@@ -1,24 +1,7 @@
-# RemoteCpp Plugin
+# RemoteCpp Sublime Text Plugin
 
 The simple goal of this Sublime Text Editor plugin is to make it pleasant/acceptable to develop C++ remotely via SSH.
 
-
-## How Does It Work?
-
-RemoteCpp relies on the ability to communicate with the remote host without having to manually type the password every single time.
-To do so there are at least two options:
-
-1. Configure the remote ssh server to accept you ssh key (by updating the ~/.ssh/auhtorized_keys file). Here's a link on how to achieve this:
-https://www.debian.org/devel/passwordlessssh
-
-2. Create a SSH listen tunnel to the remote server so RemoteCpp always connects to localhost port ["remote_cpp_ssh_port": "8888"]. This way you only have to type your ssh password once. Here's a recommendation of command you can use to connect:
-
-```
-ssh -L 8888:localhost:22 $REMOTE_HOSTNAME -o TCPKeepAlive=yes \
-  -o ServerAliveCountMax=1000000 -o ServerAliveInterval=300 \
-  -o ControlPersist=4h -o ControlMaster=yes \
-  'while true; do echo "=> [$(date)] Still Alive!!! :)" ; sleep 5s; done;'
-```
 
 ## Key Shortcuts/Features
 
@@ -40,6 +23,24 @@ ssh -L 8888:localhost:22 $REMOTE_HOSTNAME -o TCPKeepAlive=yes \
 * **Enter** *(In Build View)*: Goto Build Error File Under the Cursor.
 * **Enter** *(In Grep View)*: Goto File Matched By Grep Under the Cursor.
 * **Enter** *(In ListFiles View)*: Open File Under Cursor.
+
+
+## How Does It Work?
+
+RemoteCpp relies on the ability to communicate with the remote host without having to manually type the password every single time.
+To do so there are at least two options:
+
+1. Configure the remote ssh server to accept you ssh key (by updating the ~/.ssh/auhtorized_keys file). Here's a link on how to achieve this:
+https://www.debian.org/devel/passwordlessssh
+
+2. Create a SSH listen tunnel to the remote server so RemoteCpp always connects to localhost port ["remote_cpp_ssh_port": "8888"]. This way you only have to type your ssh password once. Here's a recommendation of command you can use to connect:
+
+```
+ssh -L 8888:localhost:22 $REMOTE_HOSTNAME -o TCPKeepAlive=yes \
+  -o ServerAliveCountMax=1000000 -o ServerAliveInterval=300 \
+  -o ControlPersist=4h -o ControlMaster=yes \
+  'while true; do echo "=> [$(date)] Still Alive!!! :)" ; sleep 5s; done;'
+```
 
 
 ## Requirements
