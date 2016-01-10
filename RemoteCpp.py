@@ -442,7 +442,7 @@ def is_remote_cpp_file(view):
 def download_file(file):
   log('Downloading the file [{file}]...'.format(file=file.remote_path()))
   run_cmd((
-      'scp',
+      s_scp(),
       '-P', str(s_ssh_port()),
       '{hostname}:{path}'.format(
           path=file.remote_path(),

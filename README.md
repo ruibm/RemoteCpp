@@ -13,6 +13,12 @@ https://www.debian.org/devel/passwordlessssh
 
 2. Create a SSH listen tunnel to the remote server so RemoteCpp always connects to localhost port ["remote_cpp_ssh_port": "8888"]. This way you only have to type your ssh password once. Here's a recommendation of command you can use to connect:
 
+```
+ssh -L 8888:localhost:22 $REMOTE_HOSTNAME -o TCPKeepAlive=yes \
+  -o ServerAliveCountMax=1000000 -o ServerAliveInterval=300 \
+  -o ControlPersist=4h -o ControlMaster=yes \
+  'while true; do echo "=> [$(date)] Still Alive!!! :)" ; sleep 5s; done;'
+```
 
 ## Key Shortcuts/Features
 
@@ -36,11 +42,29 @@ https://www.debian.org/devel/passwordlessssh
 * **Enter** *(In ListFiles View)*: Open File Under Cursor.
 
 
-## Contacts
+## Requirements
+
+RemoteCpp relies on some Unix command line tools to be in $PATH in order to run correctly.  
+Apart from *ssh* which is required locally, all these tools should be available in the remote machine.  
+Here is a list of some of the used tools:
+
+* find
+* grep
+* mkdir
+* mv
+* rm
+* scp
+* ssh
+
+If some particular RemoteCpp command does not seem to work please take a look at Sublime Text Console (key shortcut is **Ctrl+`**) to diagnose.
+
+
+## Contacts and Bug Reports
 1. Via BitBucket: https://bitbucket.org/ruibm/remotecpp
 2. Via Email: ruibm@ruibm.com
 
+
 ## License
 
-RemoteCpp is release under the license: Apache License Version 2.0, January 2004
+RemoteCpp is release under the license: Apache License Version 2.0, January 2004  
 For full details please read: https://bitbucket.org/ruibm/remotecpp/src/master/LICENSE
