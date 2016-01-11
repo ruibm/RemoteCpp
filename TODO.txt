@@ -41,8 +41,7 @@ X Create Command that opens the README.md file.
 X Make sure RemoteCpp opens the README.md file the first time it's ran.
 X Implement refresh current (for files and file lists).
 X Implement refresh all (for files and file lists).
-
-- Implement fast file open (with selection box).
+X Implement fast file open (with selection box).
 
 - Improve error handling to always notify the user when the remote connection is broken.
 - Implement singleton Grep.

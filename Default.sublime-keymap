@@ -9,6 +9,7 @@
     { "keys": ["ctrl+alt+super+d"], "command": "remote_cpp_delete_file" },
     { "keys": ["ctrl+alt+super+g"], "command": "remote_cpp_grep" },
     { "keys": ["ctrl+alt+super+l"], "command": "remote_cpp_list_files_in_path" },
+    { "keys": ["ctrl+alt+super+o"], "command": "remote_cpp_quick_open_file" },
     { "keys": ["ctrl+alt+super+r"], "command": "remote_cpp_refresh_all_views" },
     { "keys": ["super+alt+up"], "command": "remote_cpp_toggle_header_implementation" },
     { "keys": ["super+enter"], "command": "remote_cpp_goto_include" },

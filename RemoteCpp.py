@@ -714,6 +714,47 @@ class Commands(object):
     view.run_command(RemoteCppGotoGrepMatchCommand.NAME)
 
 
+class RemoteCppQuickOpenFileCommand(sublime_plugin.TextCommand):
+  NAME = 'remote_cpp_quick_open_file'
+
+  def run(self, edit):
+    file_list = [ '<<< Refresh Remote File List... >>>' ]
+    file_list.extend(STATE.list(s_cwd()))
+    view = self.view
+    window = view.window()
+    def on_select(index):
+      if index == 0:
+        self.log("Refreshing file list...")
+        def in_background():
+          start_secs = time.time()
+          RemoteCppListFilesCommand.get_file_list(window)
+          msg = 'File list successfully refreshed in {millis} millis.'.format(
+              millis=delta_millis(start_secs))
+          set_status(msg)
+        THREAD_POOL.run(in_background)
+      elif index > 0:
+        self.log('Loading file {0}...'.format(file_list[index]))
+        file = File(cwd=s_cwd(), path=file_list[index])
+        Commands.open_file(view, file.to_args())
+      else:
+        self.log('Nothing selected.')
+    selected_index = 0
+    file = STATE.file(view.file_name())
+    if file != None:
+      for i in range(len(file_list)):
+        if file_list[i] == file.path:
+          selected_index = i
+          break
+    window.show_quick_panel(
+        items=file_list,
+        on_select=on_select,
+        on_highlight=None,
+        selected_index=selected_index)
+
+  def log(self, msg):
+    log(msg, type=type(self).__name__)
+
+
 class RemoteCppRefreshAllViewsCommand(sublime_plugin.ApplicationCommand):
   NAME = 'remote_cpp_refresh_all_views'
 

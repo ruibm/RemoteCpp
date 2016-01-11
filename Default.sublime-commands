@@ -1,6 +1,7 @@
 [
     { "caption": "RemoteCpp: Open README.md", "command": "remote_cpp_open_readme" },
     { "caption": "RemoteCpp: Garbage Collect Internal State", "command": "remote_cpp_gc" },
+    { "caption": "RemoteCpp: Quick Open File", "command": "remote_cpp_quick_open_file" },
     { "caption": "RemoteCpp: Open File", "command": "remote_cpp_open_file" },
     { "caption": "RemoteCpp: New File", "command": "remote_cpp_new_file" },
     { "caption": "RemoteCpp: Move File", "command": "remote_cpp_move_file" },
