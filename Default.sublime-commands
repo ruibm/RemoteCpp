@@ -10,7 +10,6 @@
     { "caption": "RemoteCpp: Grep", "command": "remote_cpp_grep" },
     { "caption": "RemoteCpp: Refresh View", "command": "remote_cpp_refresh_view" },
     { "caption": "RemoteCpp: Refresh All Views", "command": "remote_cpp_refresh_all_views" },
-    { "caption": "RemoteCpp: Refresh File Cache", "command": "remote_cpp_refresh_cache" },
     { "caption": "RemoteCpp: Build", "command": "remote_cpp_build" },
     { "caption": "RemoteCpp: Goto Include", "command": "remote_cpp_goto_include" },
     { "caption": "RemoteCpp: Toggle Header/Implementation", "command": "remote_cpp_toggle_header_implementation" },

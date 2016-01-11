@@ -83,13 +83,16 @@ CPP_EXTENSIONS = set([
 
 class CmdListener(object):
   def on_stdout(self, line):
-    log('stdout: ' + line)
+    self.log('stdout: ' + line)
 
   def on_stderr(self, line):
     log('stderr: ' + line)
 
   def on_exit(self, exit_code):
-    log('Exit code: {0}'.format(exit_code))
+    self.log('Exit code: {0}'.format(exit_code))
+
+  def log(self, msg):
+    log(msg, type=CmdListener.__name__)
 
 
 class ListFilesListener(CmdListener):
@@ -136,6 +139,7 @@ class AppendToViewListener(CmdListener):
   def __init__(self, view):
     self._view = view
     self._start_secs = time.time()
+    self._last_buffer_refresh = self._start_secs
     self._last_flush = 0
     self._buffer = []
 
@@ -165,9 +169,9 @@ class AppendToViewListener(CmdListener):
 
   def _try_flush_buffer(self, force=False):
     now_secs = time.time()
-    if (not force) and (now_secs - self._start_secs < 1):
+    if (not force) and (now_secs - self._last_buffer_refresh < 1):
       return
-    self._start_secs = now_secs
+    self._last_buffer_refresh = now_secs
     text = ''.join(self._buffer)
     self._buffer = []
     Commands.append_text(self._view, text)
@@ -299,7 +303,7 @@ class ProgressAnimation(object):
       else:
         sublime.status_message('')
     except Exception as e:
-      log_exception('Exception running animation: ' + e)
+      log_exception('Exception running animation: {0}'.format(e))
       sublime.status_message('')
 
   def _draw_animation(self):
@@ -420,6 +424,27 @@ class PluginState(object):
 # RemoteCpp Functions
 ##############################################################
 
+def set_status(msg):
+  runnable = lambda: sublime.status_message(msg)
+  sublime.set_timeout(runnable, 1000)
+
+def clear_local_caches():
+  files = []
+  roots = set()
+  for window in sublime.windows():
+    for view in window.views():
+      file = STATE.file(view.file_name())
+      if file:
+        files.append(file)
+        roots.add(file.local_root())
+  for root in roots:
+      log('Deleting local cache directory [{0}]...'.format(root))
+      if os.path.exists(root):
+        shutil.rmtree(root)
+  for file in files:
+    log("Refreshing open file [{0}]...".format(file.remote_path()))
+    download_file(file)
+
 def plugin_dir():
   return os.path.join(sublime.cache_path(), 'RemoteCpp')
 
@@ -512,6 +537,7 @@ def time_str():
   return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 def log(msg, type=''):
+  msg = 'RemoteCpp: {msg}'.format(msg=msg)
   if type in LOG_TYPES:
     if len(type) > 0:
       msg = '{type}: {msg}'.format(type=type, msg=msg)
@@ -688,28 +714,54 @@ class Commands(object):
     view.run_command(RemoteCppGotoGrepMatchCommand.NAME)
 
 
+class RemoteCppRefreshAllViewsCommand(sublime_plugin.ApplicationCommand):
+  NAME = 'remote_cpp_refresh_all_views'
+
+  def run(self):
+    start_secs = time.time()
+    clear_local_caches()
+    for window in sublime.windows():
+      for view in window.views():
+        if RemoteCppRefreshViewCommand.is_view_refreshable(view) and \
+            None == STATE.file(view.file_name()):
+          view.run_command(RemoteCppRefreshViewCommand.NAME)
+    msg = 'Successfully refreshed all views in {0} millis.'.format(
+        delta_millis(start_secs))
+    set_status(msg)
+
+
 class RemoteCppRefreshViewCommand(sublime_plugin.TextCommand):
   NAME = 'remote_cpp_refresh_view'
 
   def is_enabled(self):
-    return None != STATE.file(self.view.file_name()) or \
-        RemoteCppListFilesCommand.owns_view(self.view)
+    return self.is_view_refreshable(self.view)
 
   def is_visible(self):
     return self.is_enabled()
 
   def run(self, edit):
+    start_secs = time.time()
     file = STATE.file(self.view.file_name())
     if file != None:
       self._refresh_file(file)
     elif RemoteCppListFilesCommand.owns_view(self.view):
       self._refresh_file_list()
+    else:
+      return
+    msg = 'View refreshed in {0} millis.'.format(delta_millis(start_secs))
+    set_status(msg)
+
+
+  @staticmethod
+  def is_view_refreshable(view):
+    return None != STATE.file(view.file_name()) or \
+        RemoteCppListFilesCommand.owns_view(view)
 
   def _refresh_file(self, file):
     self.log('Refresh remote file!!')
     if os.path.isfile(file.local_path()):
       os.remove(file.local_path())
-    Commands.open_file(self.view, file.to_args())
+    download_file(file)
 
   def _refresh_file_list(self):
     self.log('Refresh ListView!!!')
@@ -733,6 +785,7 @@ class RemoteCppOpenReadmeCommand(sublime_plugin.WindowCommand):
   def run(self):
     view = self.window.open_file(self.readme_path())
     view.set_read_only(True)
+    view.set_scratch(True)
 
   def readme_path(self):
     return os.path.join(sublime.packages_path(), 'RemoteCpp', 'README.md')
@@ -1063,38 +1116,6 @@ class RemoteCppToggleHeaderImplementationCommand(sublime_plugin.TextCommand):
         selected_index=0)
 
 
-class RemoteCppRefreshCacheCommand(sublime_plugin.TextCommand):
-  NAME = 'remote_cpp_refresh_cache'
-
-  def run(self, edit):
-    window = self.view.window()
-    runnable = lambda : self._run_in_the_background(window)
-    THREAD_POOL.run(runnable)
-
-  def _run_in_the_background(self, window):
-    start_secs = time.time()
-    files = []
-    roots = set()
-    for view in window.views():
-      file = STATE.file(view.file_name())
-      if file:
-        files.append(file)
-        roots.add(file.local_root())
-    for root in roots:
-        log('Deleting local cache directory [{0}]...'.format(root))
-        if os.path.exists(root):
-          shutil.rmtree(root)
-    for file in files:
-      log("Refreshing open file [{0}]...".format(file.remote_path()))
-      download_file(file)
-    millis = delta_millis(start_secs)
-    msg = 'Successfully refreshed RemoteCpp cache in {0} millis.'.format(millis)
-    log(msg)
-    def update_state():
-      sublime.status_message(msg)
-    sublime.set_timeout(update_state, 500)
-
-
 class RemoteCppOpenFileCommand(sublime_plugin.TextCommand):
     NAME = 'remote_cpp_open_file'
 
@@ -1142,10 +1163,10 @@ class RemoteCppListFilesInPathCommand(sublime_plugin.TextCommand):
   NAME = 'remote_cpp_list_files_in_path'
 
   def is_enabled(self):
-    return is_remote_cpp_file(self.view)
+    return None != STATE.file(self.view.file_name())
 
   def is_visible(self):
-    return is_remote_cpp_file(self.view)
+    return self.is_enabled()
 
   def run(self, edit):
     file = STATE.file(self.view.file_name())
