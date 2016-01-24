@@ -774,24 +774,16 @@ class RemoteCppRefreshAllViewsCommand(sublime_plugin.ApplicationCommand):
 class RemoteCppRefreshViewCommand(sublime_plugin.TextCommand):
   NAME = 'remote_cpp_refresh_view'
 
-  def is_enabled(self):
-    return self.is_view_refreshable(self.view)
-
-  def is_visible(self):
-    return self.is_enabled()
-
   def run(self, edit):
+    if not self.is_view_refreshable(self.view):
+      self.view.run_command(RemoteCppRefreshAllViewsCommand.NAME)
+      return
     start_secs = time.time()
     file = STATE.file(self.view.file_name())
     if file != None:
       self._refresh_file(file)
     elif RemoteCppListFilesCommand.owns_view(self.view):
       self._refresh_file_list()
-    else:
-      return
-    msg = 'View refreshed in {0} millis.'.format(delta_millis(start_secs))
-    set_status(msg)
-
 
   @staticmethod
   def is_view_refreshable(view):
@@ -799,10 +791,12 @@ class RemoteCppRefreshViewCommand(sublime_plugin.TextCommand):
         RemoteCppListFilesCommand.owns_view(view)
 
   def _refresh_file(self, file):
-    self.log('Refresh remote file!!')
-    if os.path.isfile(file.local_path()):
-      os.remove(file.local_path())
-    download_file(file)
+    def run_in_the_background():
+      self.log('Refresh remote file!!')
+      if os.path.isfile(file.local_path()):
+        os.remove(file.local_path())
+      download_file(file)
+    THREAD_POOL.run(run_in_the_background)
 
   def _refresh_file_list(self):
     self.log('Refresh ListView!!!')
@@ -1203,13 +1197,10 @@ class RemoteCppOpenFileCommand(sublime_plugin.TextCommand):
 class RemoteCppListFilesInPathCommand(sublime_plugin.TextCommand):
   NAME = 'remote_cpp_list_files_in_path'
 
-  def is_enabled(self):
-    return None != STATE.file(self.view.file_name())
-
-  def is_visible(self):
-    return self.is_enabled()
-
   def run(self, edit):
+    if None == STATE.file(self.view.file_name()):
+      self.view.run_command(RemoteCppListFilesCommand.NAME)
+      return
     file = STATE.file(self.view.file_name())
     prefix = os.path.dirname(file.path)
     self.view.run_command(RemoteCppListFilesCommand.NAME, {'prefix': prefix})
