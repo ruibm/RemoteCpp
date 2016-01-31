@@ -2,6 +2,7 @@
 
 The simple goal of this Sublime Text Editor plugin is to make it pleasant/acceptable to develop C++ remotely via SSH.
 
+<img src='https://raw.githubusercontent.com/ruibm/RemoteCpp/master/ScreenCasts/RemoteCpp.gif' alt='RemoteCpp.gif' style="border: 1px solid #b3b3b3" />
 
 ## Key Shortcuts/Features
 
