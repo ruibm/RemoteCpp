@@ -50,8 +50,8 @@ def s_build_cmd():
 
 def s_find_cmd():
   return _get_or_default('remote_cpp_find_cmd',
-      ("find . -maxdepth 5 -not -path '*/\\.*' -type f -print "
-          "-not -path '*buck-cache*' -not -path '*buck-out*'"))
+      ("find . -maxdepth 5 -not -path '*/\\.*' -type f "
+          "-not -path '*buck-cache*' -not -path '*buck-out*' -print"))
 
 def s_grep_cmd():
   return _get_or_default('remote_cpp_grep_cmd', 'grep  -R -n \'{pattern}\' .')
@@ -425,6 +425,7 @@ class PluginState(object):
 ##############################################################
 
 def set_status(msg):
+  msg = "RemoteCpp -> " + msg
   runnable = lambda: sublime.status_message(msg)
   sublime.set_timeout(runnable, 1000)
 
@@ -714,6 +715,24 @@ class Commands(object):
     view.run_command(RemoteCppGotoGrepMatchCommand.NAME)
 
 
+class RemoteCppClearLocalCacheCommand(sublime_plugin.TextCommand):
+  NAME = 'remote_cpp_clear_local_cache'
+
+  def run(self, edit):
+    for window in sublime.windows():
+      for view in window.views():
+        if None != STATE.file(view.file_name()):
+          view.close()
+    def run_in_background():
+      try:
+        clear_local_caches()
+      except:
+        set_status("Failed to clear the local cache. :(")
+      else:
+        set_status("Successfully cleared the local cache. :)")
+    THREAD_POOL.run(run_in_background)
+
+
 class RemoteCppQuickOpenFileCommand(sublime_plugin.TextCommand):
   NAME = 'remote_cpp_quick_open_file'
 
@@ -971,7 +990,7 @@ class RemoteCppMoveFileCommand(sublime_plugin.TextCommand):
 
 class RemoteCppGotoBuildErrorCommand(sublime_plugin.TextCommand):
   NAME = 'remote_cpp_goto_build_error'
-  REGEX = re.compile('^([^:]+):(\d+):(\d+):.+$')
+  REGEX = re.compile('^([^:]+):(\d+)(:\d+)?:.+$')
 
   def run(self, edit):
     self.log('Going to build error from line...')
@@ -986,7 +1005,10 @@ class RemoteCppGotoBuildErrorCommand(sublime_plugin.TextCommand):
         self.log('Found build error in line [{0}] => [{1}]'.format(row, text))
         path = match.group(1)
         row = int(match.group(2))
-        col = int(match.group(3))
+        if match.group(3) == None:
+          col = 0
+        else:
+          col = int(match.group(3)[1:])
         self.log('Build error in file [{path}] row=[{row}] col=[{col}].'.format(
             path=path,
             row=row,
@@ -1218,6 +1240,7 @@ class RemoteCppListFilesCommand(sublime_plugin.TextCommand):
       view = self._find_single_file_list_view(prefix)
     if view == None:
       view = window.new_file()
+      view.settings().set("word_wrap", "false")
     window.focus_view(view)
     view.set_name(self._get_title(prefix))
     view.set_read_only(True)

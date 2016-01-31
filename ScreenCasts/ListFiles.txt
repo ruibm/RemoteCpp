@@ -1,0 +1,4 @@
+=== List Remote Files ===
+
+1. Cmd+Alt+L to List all remote files.
+2. Move the cursor to the file and press Enter to open it.

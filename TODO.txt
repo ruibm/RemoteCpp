@@ -42,7 +42,11 @@ X Make sure RemoteCpp opens the README.md file the first time it's ran.
 X Implement refresh current (for files and file lists).
 X Implement refresh all (for files and file lists).
 X Implement fast file open (with selection box).
+X "RefreshAll" blocks Sublime until complete - run it in the background.
+X In the BuildView, it should be able to jump into unit test failure locations.
 
+
+- "Move" does not seem to work for non-cpp files.
 - Improve error handling to always notify the user when the remote connection is broken.
 - Implement singleton Grep.
 - Index properly the possible ToggleFiles at ListFiles time.
@@ -55,6 +59,8 @@ X Implement fast file open (with selection box).
 - OnRefresh, if the RemoteFile is different from the local one notify the user and ask them if they want to proceed.
 - Toggling Header/Implementation from 'c' or 'cpp' should go directly to 'h' without prompt.
 - Reduce logging all over the place.
+- Add Syntax highlighting for the compiler BuildView.
+- Add Syntax highlighting for the List view BuildView.
 
 
 # Will disconnect after (ServerAliveCountMax * ServerAliveInterval) seconds.

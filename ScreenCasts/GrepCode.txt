@@ -1,0 +1,4 @@
+=== Grep Code ===
+
+1. Cmd+Alt+Ctrl+G to grep all remote files.
+2. Move the cursor to the file and press Enter to jump in to it.

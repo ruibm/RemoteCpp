@@ -1,0 +1,5 @@
+=== Remote Compile and Jump To Errors ===
+
+1. Cmd+Alt+B to trigger remote compilation.
+2. Move the cursor to the line with error and press Enter to jump to it.
+3. Fix and rebuild.

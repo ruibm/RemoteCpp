@@ -1,0 +1,5 @@
+=== Navigate C++ Code ===
+
+1. Cmd+Alt+O to open a remote file.
+2. Cmd+Enter to follow #include file.
+3. Cmd+Alt+Up to toggle between header/implementation.
