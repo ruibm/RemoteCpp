@@ -63,7 +63,7 @@ If some particular RemoteCpp command does not seem to work please take a look at
 
 
 ## Contacts and Bug Reports
-1. Via BitBucket: https://bitbucket.org/ruibm/remotecpp
+1. Via GitHub: https://github.com/ruibm/remotecpp
 2. Via Email: ruibm@ruibm.com
 
 
