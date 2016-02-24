@@ -1,4 +1,35 @@
 == TODO
+- Document the settings available for RemoteCpp.
+- Move/Rename seems not to be working.
+- Index properly the possible ToggleFiles at ListFiles time.
+- Use the file index to also follow includes.
+- Index in a dict() the lookups for the toggle files.
+
+- ListFiles could run automatically in the background every 5min.
+- Add a diagnostics Command to point out which RemoteCpp commands work and don't work.
+- Configure RemoteCpp to work properly on Windows.
+- 'Refresh All' is definitely quirky and blocks the editor. Need to fix that.
+- If you call "ListFiles" in a ListFiles view it should just call refresh.
+- Make number of thread pool threads a config.
+- Suggest a sublime.project with all the common settings the README.md.
+- "Move" does not seem to work for non-cpp files.
+- Improve error handling to always notify the user when the remote connection is broken.
+- When displaying files from the index, display the quick option box when there are multiple options.
+- Command to refresh current open file.
+- Fix the internal state so the file list is indexed to the 'cwd'
+- OnRefresh, if the RemoteFile is different from the local one notify the user and ask them if they want to proceed.
+- Toggling Header/Implementation from 'c' or 'cpp' should go directly to 'h' without prompt.
+- Reduce logging all over the place.
+- Add Syntax highlighting for the Grep view.
+- Add Syntax highlighting for the Build view.
+- Add Syntax highlighting for the ListFiles view.
+
+
+
+== Finished TODO tasks
+X When a file is renamed/newed/deleted update directly the file list to match.
+X Open multiple selected files.
+X Implement singleton Grep.
 X Run a remote 'ssh ls' command.
 X Pull the output of the remote 'ls' and print it onto a newly opened readonly view.
 X Wire the new readonly-view to click open the file under the cursor.
@@ -46,22 +77,8 @@ X "RefreshAll" blocks Sublime until complete - run it in the background.
 X In the BuildView, it should be able to jump into unit test failure locations.
 
 
-- "Move" does not seem to work for non-cpp files.
-- Improve error handling to always notify the user when the remote connection is broken.
-- Implement singleton Grep.
-- Index properly the possible ToggleFiles at ListFiles time.
-- Use the file index to also follow includes.
-- When displaying files from the index, display the quick option box when there are multiple options.
-- Index in a dict() the lookups for the toggle files.
-- Command to refresh current open file.
-- When a file is renamed update directly the file list to match.
-- Fix the internal state so the file list is indexed to the 'cwd'
-- OnRefresh, if the RemoteFile is different from the local one notify the user and ask them if they want to proceed.
-- Toggling Header/Implementation from 'c' or 'cpp' should go directly to 'h' without prompt.
-- Reduce logging all over the place.
-- Add Syntax highlighting for the compiler BuildView.
-- Add Syntax highlighting for the List view BuildView.
 
+== Random Notes
 
 # Will disconnect after (ServerAliveCountMax * ServerAliveInterval) seconds.
 ssh -L 8888:localhost:22 $DEV -o TCPKeepAlive=yes -o ServerAliveCountMax=1000000 -o ServerAliveInterval=86400 -o ControlPersist=4h -o ControlMaster=yes 'while true; do echo "=> [$(date)] Still Alive!!! :)" ; sleep 5s; done;'

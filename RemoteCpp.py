@@ -114,7 +114,7 @@ class ListFilesListener(CmdListener):
       self.listener.on_stderr(line)
 
   def on_exit(self, exit_code):
-    self.normalise_file_list()
+    self.file_list = normalise_file_list(self.file_list)
     if None != self.listener:
       filtered_files = []
       for path in self.file_list:
@@ -122,17 +122,6 @@ class ListFilesListener(CmdListener):
           filtered_files.append(path)
       self.listener.on_stdout('\n'.join(filtered_files) + '\n')
       self.listener.on_exit(exit_code)
-
-  def normalise_file_list(self):
-    file_list = self.file_list
-    new_list = []
-    for path in file_list:
-      path = normalise_path(path)
-      if len(path) == 0:
-        continue
-      new_list.append(path)
-    new_list = sorted(new_list, key=lambda s: s.lower())
-    self.file_list = new_list
 
 
 class AppendToViewListener(CmdListener):
@@ -227,6 +216,7 @@ class File(object):
   def local_root_for_cwd(cwd):
     local_root = os.path.join(
         plugin_dir(),
+        'RemoteCpp-Cache',
         md5(cwd))
     return local_root
 
@@ -329,7 +319,6 @@ class PluginState(object):
   STATE_FILE = 'RemoteCpp.PluginState.json.bz2'
 
   # Latest file_lists per CWD.
-  # old: map<window_id, files_list>
   # new: map<cwd, vector<path>>
   LISTS = 'file_lists'
   README = 'has_readme_been_shown'
@@ -364,6 +353,19 @@ class PluginState(object):
 
   def set_list(self, cwd, file_list):
     self.state[self.LISTS][cwd] = file_list
+
+  def update_list(self, cwd, files_to_add = [], files_to_rm = []):
+    old_list = self.list(cwd)
+    if not old_list:
+      return
+    paths_to_rm = set([f.path for f in files_to_rm])
+    new_list = []
+    for path in old_list:
+      if path not in paths_to_rm:
+        new_list.append(path)
+    new_list.extend([f.path for f in files_to_add])
+    new_list = normalise_file_list(new_list)
+    self.set_list(cwd, new_list)
 
   def gc(self):
     self.log('RemoteCpp is GC\'ing the PluginState...')
@@ -424,6 +426,21 @@ class PluginState(object):
 # RemoteCpp Functions
 ##############################################################
 
+def normalise_file_list(file_list):
+  new_list = []
+  for path in file_list:
+    path = normalise_path(path)
+    if len(path) == 0:
+      continue
+    new_list.append(path)
+  def key_generator(path):
+    dir, name = os.path.split(path)
+    # Make sure files always appear before sub-directories.
+    return os.path.join(dir, '\x00' + name)
+  new_list = sorted(new_list,
+                    key=key_generator)
+  return new_list
+
 def set_status(msg):
   msg = "RemoteCpp -> " + msg
   runnable = lambda: sublime.status_message(msg)
@@ -433,11 +450,11 @@ def clear_local_caches():
   files = []
   roots = set()
   for window in sublime.windows():
-    for view in window.views():
-      file = STATE.file(view.file_name())
-      if file:
-        files.append(file)
-        roots.add(file.local_root())
+    # All views in a window share the same settings.
+    view = window.views()[0]
+    cwd = s_cwd(view)
+    local_root = File.local_root_for_cwd(cwd)
+    roots.add(local_root)
   for root in roots:
       log('Deleting local cache directory [{0}]...'.format(root))
       if os.path.exists(root):
@@ -461,6 +478,15 @@ def normalise_path(path):
   if path.startswith('./'):
     path = path[2:]
   return path
+
+def get_multiple_sel_lines(view):
+  all_regs = view.sel()
+  all_lines = []
+  for reg in all_regs:
+    for line_reg in view.lines(reg):
+      all_lines.append(view.substr(line_reg))
+  log('Selection includes [{0}] lines.'.format(len(all_lines,)))
+  return all_lines
 
 def get_sel_line(view):
   all_regs = view.sel()
@@ -652,10 +678,22 @@ class ListFilesEventListener(sublime_plugin.EventListener):
     # log('cmd={cmd} args={args}'.format(cmd=command_name, args=args))
     if RemoteCppListFilesCommand.owns_view(view) and \
         command_name == 'insert' and args['characters'] == '\n':
-      path = get_sel_line(view)
-      if self._is_valid_path(path):
-        args = File(cwd=s_cwd(), path=path).to_args()
-        return (RemoteCppOpenFileCommand.NAME, args)
+      all_lines = get_multiple_sel_lines(view)
+      paths = []
+      for line in all_lines:
+        if self._is_valid_path(line):
+          paths.append(line)
+      def run_in_background():
+        for path in paths:
+          file = File(cwd=s_cwd(), path=path)
+          Commands.open_file(view, file.to_args())
+      if len(paths) > 10:
+        msg = ('This will open {0} files which could be slow. \n'
+               'Are you sure you want to do that?').format(len(paths),)
+        button_text = 'Open {0} Files'.format(len(paths))
+        if not sublime.ok_cancel_dialog(msg, button_text):
+          return None
+      THREAD_POOL.run(run_in_background)
     return None
 
   def _is_valid_path(self, line):
@@ -779,15 +817,17 @@ class RemoteCppRefreshAllViewsCommand(sublime_plugin.ApplicationCommand):
 
   def run(self):
     start_secs = time.time()
-    clear_local_caches()
-    for window in sublime.windows():
-      for view in window.views():
-        if RemoteCppRefreshViewCommand.is_view_refreshable(view) and \
-            None == STATE.file(view.file_name()):
-          view.run_command(RemoteCppRefreshViewCommand.NAME)
-    msg = 'Successfully refreshed all views in {0} millis.'.format(
-        delta_millis(start_secs))
-    set_status(msg)
+    def run_in_background():
+      clear_local_caches()
+      for window in sublime.windows():
+        for view in window.views():
+          if RemoteCppRefreshViewCommand.is_view_refreshable(view) and \
+              None == STATE.file(view.file_name()):
+            view.run_command(RemoteCppRefreshViewCommand.NAME)
+      msg = 'Successfully refreshed all views in {0} millis.'.format(
+          delta_millis(start_secs))
+      set_status(msg)
+    THREAD_POOL.run(run_in_background)
 
 
 class RemoteCppRefreshViewCommand(sublime_plugin.TextCommand):
@@ -855,6 +895,7 @@ class RemoteCppDeleteFileCommand(sublime_plugin.TextCommand):
     return self.is_enabled()
 
   def run(self, edit):
+    view = self.view
     file = STATE.file(self.view.file_name())
     title = 'Delete file:\n\n{0}'.format(file.remote_path())
     if sublime.ok_cancel_dialog(title, 'Delete'):
@@ -862,6 +903,7 @@ class RemoteCppDeleteFileCommand(sublime_plugin.TextCommand):
       cmd_str = 'rm -f {remote_path}'.format(remote_path=file.remote_path())
       ssh_cmd(cmd_str)
       self.view.close()
+      STATE.update_list(cwd=s_cwd(view), files_to_rm=[file])
 
 class RemoteCppGcCommand(sublime_plugin.TextCommand):
   def run(self, edit):
@@ -955,15 +997,16 @@ class RemoteCppMoveFileCommand(sublime_plugin.TextCommand):
 
   def run(self, edit):
     log('Moving file...')
-    orig_file = STATE.file(self.view.file_name())
-    callback = lambda dst_file: self._on_move(orig_file, dst_file)
+    view = self.view
+    orig_file = STATE.file(view.file_name())
+    callback = lambda dst_file: self._on_move(view, orig_file, dst_file)
     show_file_input(self.view, 'Move Remote File', callback)
 
-  def _on_move(self, src_file, dst_file):
-    runnable = lambda: self._run_in_the_background(src_file, dst_file)
+  def _on_move(self, view, src_file, dst_file):
+    runnable = lambda: self._run_in_the_background(view, src_file, dst_file)
     THREAD_POOL.run(runnable)
 
-  def _run_in_the_background(self, src_file, dst_file):
+  def _run_in_the_background(self, view, src_file, dst_file):
     try:
       ssh_cmd('mv "{src}" "{dst}"'.format(
           src=src_file.remote_path(),
@@ -979,7 +1022,10 @@ class RemoteCppMoveFileCommand(sublime_plugin.TextCommand):
     self._rm_local_file(dst_file.local_path())
     Commands.open_file(self.view, dst_file.to_args())
     log(dir(self.view))
-    self.view.close()
+    view.close()
+    STATE.update_list(cwd=s_cwd(view),
+                      files_to_add=[dst_file],
+                      files_to_rm=[src_file])
 
   def _rm_local_file(self, path):
     try:
@@ -1026,13 +1072,14 @@ class RemoteCppNewFileCommand(sublime_plugin.TextCommand):
   NAME = 'remote_cpp_new_file'
 
   def run(self, edit):
-    show_file_input(self.view, 'New Remote File', self._on_done)
+    view = self.view
+    def on_done(file):
+      runnable = lambda : self._run_in_the_background(view, file)
+      THREAD_POOL.run(runnable)
+    show_file_input(self.view, 'New Remote File', on_done)
 
-  def _on_done(self, file):
-    runnable = lambda : self._run_in_the_background(file)
-    THREAD_POOL.run(runnable)
 
-  def _run_in_the_background(self, file):
+  def _run_in_the_background(self, view, file):
     new_path = file.remote_path()
     cmd = ('if [[ ! -f {remote_path} ]]; then mkdir -p {remote_dir}; fi; '
         ' touch {remote_path};').format(
@@ -1040,7 +1087,8 @@ class RemoteCppNewFileCommand(sublime_plugin.TextCommand):
             remote_dir=os.path.dirname(new_path),
     )
     ssh_cmd(cmd)
-    Commands.open_file(self.view, file.to_args())
+    Commands.open_file(view, file.to_args())
+    STATE.update_list(cwd=s_cwd(view), files_to_add=[file])
 
 
 class RemoteCppBuildCommand(sublime_plugin.TextCommand):
