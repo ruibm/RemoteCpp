@@ -4,6 +4,7 @@ The simple goal of this Sublime Text Editor plugin is to make it pleasant/accept
 
 <img src='https://raw.githubusercontent.com/ruibm/RemoteCpp/master/ScreenCasts/RemoteCpp.gif' alt='RemoteCpp.gif' style="border: 1px solid #b3b3b3" />
 
+
 ## Key Shortcuts/Features
 
 * **Ctrl+Cmd+Alt+L**: List Remote Files.
@@ -25,6 +26,23 @@ The simple goal of this Sublime Text Editor plugin is to make it pleasant/accept
 * **Enter** *(In Build View)*: Goto Build Error File Under the Cursor.
 * **Enter** *(In Grep View)*: Goto File Matched By Grep Under the Cursor.
 * **Enter** *(In ListFiles View)*: Open File Under Cursor.
+
+## Settings
+
+The following RemoteCpp settings can be set in any of RemoteCpp's setting files, eg. 'Settings - User', 'Settings - Default', 'Project Settings', ...
+
+* **remote_cpp_build_cmd**: Build command ran in the remote server.
+* **remote_cpp_cwd**: Current working directory in the remote server.
+* **remote_cpp_find_cmd**: Find command ran in the remote server to list all files.
+* **remote_cpp_grep_cmd**: Grep command ran in the remote server to grep for symbols. *{pattern}* will be replace with the grep pattern typed in Sublime's input text UI.
+* **remote_cpp_scp**: Path to Secure Copy (scp) binary used to transfer files between the local machine and the remote server.
+* **remote_cpp_single_build_view**: *(Boolean)* Whether build commands are always executed in the same View (True) or if a new view is created per build (False).
+* **remote_cpp_single_file_list_view**: *(Boolean)* Whether file listing commands are always executed in the same View (True) or if a new view is created per file listing (False).
+* **remote_cpp_ssh**: Path to the local binary of secure shell (ssh) used to run commands remotely.
+* **remote_cpp_ssh_hostname**:  The hostname of the remote server.
+* **remote_cpp_ssh_port**: The ssh port the remote server is listening on.
+
+Note: All settings take type *(String)* unless stated otherwise.
 
 
 ## How Does It Work?
