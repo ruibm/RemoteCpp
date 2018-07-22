@@ -27,6 +27,8 @@
 
 
 == Finished TODO tasks
+X Add new setting to always run the build command from CWD instead of ROOT.
+X Add auto-save before build.
 X When a file is renamed/newed/deleted update directly the file list to match.
 X Open multiple selected files.
 X Implement singleton Grep.

@@ -62,6 +62,9 @@ def s_single_file_list_view():
 def s_single_build_view():
   return _get_or_default('remote_cpp_single_build_view', True)
 
+def s_save_all_on_remote_build():
+  return _get_or_default('remote_cpp_save_all_on_remote_build', False)
+
 
 ##############################################################
 # Constants
@@ -75,6 +78,7 @@ CPP_EXTENSIONS = set([
     '.h',
     '.hpp',
 ])
+
 
 
 ##############################################################
@@ -1096,6 +1100,10 @@ class RemoteCppBuildCommand(sublime_plugin.TextCommand):
   VIEW_NAME = 'Build'
 
   def run(self, edit):
+    if s_save_all_on_remote_build():
+      print("rui save_all start")
+      self.view.window().run_command('save_all')
+      print("rui save_all end")
     view = self._find_single_view()
     if view == None:
       view = self.view.window().new_file()
@@ -1112,6 +1120,30 @@ class RemoteCppBuildCommand(sublime_plugin.TextCommand):
     Commands.append_text(view, status, clean_first=True)
     THREAD_POOL.run(lambda : self._run_in_the_background(view))
 
+  def _get_build_cwd(self):
+    config = 'remote_cpp_build_path'
+    path_type = _get_or_default(config, 'root')
+    if path_type == 'root':
+      return s_cwd()
+    elif path_type == 'current_file_cwd':
+      view = self.view
+      current_file = STATE.file(view.file_name())
+      if current_file == None:
+        msg = ('Currently opened file is not managed by RemoteCpp so cannot '
+               'trigger remote build. Please update config [{}] to '
+               'value [root].').format(config)
+        sublime.error_message(msg)
+        raise Exception(msg)
+      path = os.path.dirname(current_file.remote_path())
+      return path
+    else:
+      msg = 'Unsupported value [{}] for config [{}].'.format(path_type, config)
+      sublime.error_message(msg)
+      raise Exception(msg)
+
+  def log(self, msg):
+    log(msg, type=type(self).__name__)
+
   def _find_single_view(self):
     if not s_single_build_view():
       return None
@@ -1121,7 +1153,7 @@ class RemoteCppBuildCommand(sublime_plugin.TextCommand):
     return None
 
   def _build_cmd(self):
-    cwd = s_cwd()
+    cwd = self._get_build_cwd()
     build_cmd = s_build_cmd()
     return "cd {cwd} && {build}".format(
         cwd=cwd,

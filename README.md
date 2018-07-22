@@ -31,7 +31,9 @@ The simple goal of this Sublime Text Editor plugin is to make it pleasant/accept
 
 The following RemoteCpp settings can be set in any of RemoteCpp's setting files, eg. 'Settings - User', 'Settings - Default', 'Project Settings', ...
 
+* **remote_cpp_save_all_on_remote_build**: *(Boolean)* Automatically saves all files before starting the remote build command.
 * **remote_cpp_build_cmd**: Build command ran in the remote server.
+* **remote_cpp_build_path**: If the value is 'root' then remote build command will be run from the 'remote_cpp_cwd'. If the value is set to 'current_file_cwd' then the remote build command will be run on the same remote directory as the currently opened file.
 * **remote_cpp_cwd**: Current working directory in the remote server.
 * **remote_cpp_find_cmd**: Find command ran in the remote server to list all files.
 * **remote_cpp_grep_cmd**: Grep command ran in the remote server to grep for symbols. *{pattern}* will be replace with the grep pattern typed in Sublime's input text UI.
@@ -78,6 +80,15 @@ Here is a list of some of the used tools:
 * ssh
 
 If some particular RemoteCpp command does not seem to work please take a look at Sublime Text Console (key shortcut is **Ctrl+`**) to diagnose.
+
+
+## How To Make Changes
+
+0. Make sure you don't have RemoteCpp already installed via the package manager. If so, please remove/uninstall it before you move to next step.
+1. Find the Sublime Packages root directory via the Sublime menu option -> 'Preferences: Browse Packages'.
+2. Git clone the project into that directory.
+3. Make changes to the project files as you wish. Sublime will continously auto-reload the plugin everytime it detects changes to the files.
+4. Make sure you keep the Sublime 'Show Console' open at all times to see any errors.
 
 
 ## Contacts and Bug Reports
