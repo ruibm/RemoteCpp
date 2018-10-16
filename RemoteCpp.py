@@ -1101,9 +1101,7 @@ class RemoteCppBuildCommand(sublime_plugin.TextCommand):
 
   def run(self, edit):
     if s_save_all_on_remote_build():
-      print("rui save_all start")
       self.view.window().run_command('save_all')
-      print("rui save_all end")
     view = self._find_single_view()
     if view == None:
       view = self.view.window().new_file()
@@ -1285,7 +1283,6 @@ class RemoteCppOpenFileCommand(sublime_plugin.TextCommand):
         sublime.error_message(msg)
 
     def _open_file(self, window, file):
-      self.log('rui => ' + str(file.to_args()))
       path_row_col = '{path}:{row}:{col}'.format(
           path=file.local_path(),
           row=file.row,
